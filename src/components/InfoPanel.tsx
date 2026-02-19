@@ -5,7 +5,7 @@ interface InfoPanelProps {
   phase: PipelinePhase
   ocrText: string | null
   translations: TranslationResult[] | null
-  phraseTranslation: string | null
+  phraseTranslation: string[] | null
   error: string | null
   ocrOnly: boolean
   onOcrOnlyChange: (value: boolean) => void
@@ -134,8 +134,8 @@ export function InfoPanel({ phase, ocrText, translations, phraseTranslation, err
           </div>
         )}
 
-        {/* Phrase translation */}
-        {phraseTranslation && (
+        {/* Phrase translations (per OCR line) */}
+        {phraseTranslation && phraseTranslation.length > 0 && (
           <div style={{
             padding: '10px 12px',
             marginBottom: 10,
@@ -152,14 +152,16 @@ export function InfoPanel({ phase, ocrText, translations, phraseTranslation, err
             }}>
               Translation:
             </span>
-            <div style={{
-              fontSize: 15,
-              color: '#4dabf7',
-              marginTop: 2,
-              fontWeight: 500,
-            }}>
-              {phraseTranslation}
-            </div>
+            {phraseTranslation.map((line, i) => (
+              <div key={i} style={{
+                fontSize: 15,
+                color: '#4dabf7',
+                marginTop: 2,
+                fontWeight: 500,
+              }}>
+                {line}
+              </div>
+            ))}
           </div>
         )}
 

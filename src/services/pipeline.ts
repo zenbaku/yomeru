@@ -4,7 +4,7 @@ import { getDefaultOCRModel } from './ocr/registry.ts'
 import { getDefaultTranslationModel } from './translation/registry.ts'
 import { filterOCRLines } from './ocr/filters.ts'
 import { preprocessFrame } from './preprocessing.ts'
-import { translatePhrase } from './translation/phrase.ts'
+import { translatePhrases } from './translation/phrase.ts'
 
 export type PipelinePhase =
   | 'idle'
@@ -19,8 +19,8 @@ export interface PipelineState {
   phase: PipelinePhase
   ocrResult: OCRResult | null
   translations: TranslationResult[] | null
-  /** Full phrase translation (from online API), or null if unavailable */
-  phraseTranslation: string | null
+  /** Per-line phrase translations, or null if unavailable */
+  phraseTranslation: string[] | null
   error: string | null
   /** Dimensions of the source image (for overlay scaling) */
   imageSize: { width: number; height: number } | null
@@ -91,10 +91,11 @@ export async function runPipeline(
     state = { ...state, phase: 'translating' }
     onState(state)
 
-    // Run word-by-word lookup and phrase translation in parallel
+    // Run word-by-word lookup and per-line phrase translation in parallel
+    const lineTexts = ocrResult.lines.map((l) => l.text)
     const [translations, phraseTranslation] = await Promise.all([
       translationModel.translate(ocrResult.fullText),
-      translatePhrase(ocrResult.fullText),
+      translatePhrases(lineTexts),
     ])
 
     state = { ...state, phase: 'done', translations, phraseTranslation }

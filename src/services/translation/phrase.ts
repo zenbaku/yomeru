@@ -54,8 +54,8 @@ export async function initializePhraseModel(
 }
 
 /**
- * Translate a full Japanese phrase/sentence to English using the local Opus-MT model.
- * Returns null if the model hasn't been initialized yet or if input is empty.
+ * Translate a single phrase/sentence to English using the local Opus-MT model.
+ * Returns null if the model isn't ready or translation fails.
  */
 export async function translatePhrase(text: string): Promise<string | null> {
   const trimmed = text.trim()
@@ -67,7 +67,7 @@ export async function translatePhrase(text: string): Promise<string | null> {
   if (!translator) return null
 
   try {
-    // Truncate to avoid WASM heap overflow on long OCR text
+    // Truncate to avoid WASM heap overflow on long text
     const input = trimmed.length > MAX_INPUT_LENGTH
       ? trimmed.slice(0, MAX_INPUT_LENGTH)
       : trimmed
@@ -82,6 +82,25 @@ export async function translatePhrase(text: string): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * Translate multiple OCR lines in sequence.
+ * Returns an array of translations (null entries filtered out), or null if none succeeded.
+ */
+export async function translatePhrases(lines: string[]): Promise<string[] | null> {
+  if (lines.length === 0) return null
+
+  // Ensure model is loaded once before processing all lines
+  await initializePhraseModel()
+  if (!translator) return null
+
+  const results: string[] = []
+  for (const line of lines) {
+    const t = await translatePhrase(line)
+    if (t) results.push(t)
+  }
+  return results.length > 0 ? results : null
 }
 
 /**
