@@ -4,9 +4,10 @@ import type { TranslationResult } from '@/services/translation/types.ts'
 interface Props {
   filteredLines: OCRLine[]
   translations: TranslationResult[]
+  phraseTranslations: string[] | null
 }
 
-export function ResultsPanel({ filteredLines, translations }: Props) {
+export function ResultsPanel({ filteredLines, translations, phraseTranslations }: Props) {
   return (
     <div style={{ padding: 12, fontSize: 13 }}>
       {/* Detected lines */}
@@ -20,6 +21,20 @@ export function ResultsPanel({ filteredLines, translations }: Props) {
             </span>
           </div>
         ))}
+      </div>
+
+      {/* Phrase translation (Opus-MT) */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={sectionHeaderStyle}>Phrase Translation</div>
+        {phraseTranslations && phraseTranslations.length > 0 ? (
+          phraseTranslations.map((t, i) => (
+            <div key={i} style={phraseStyle}>{t}</div>
+          ))
+        ) : (
+          <div style={{ color: '#a0a0b0' }}>
+            {phraseTranslations === null ? 'Model not loaded' : 'No translations'}
+          </div>
+        )}
       </div>
 
       {/* Segmented words with translations */}
@@ -71,6 +86,12 @@ const sectionHeaderStyle: React.CSSProperties = {
 }
 
 const lineStyle: React.CSSProperties = {
+  padding: '4px 0',
+  borderBottom: '1px solid rgba(255,255,255,0.05)',
+}
+
+const phraseStyle: React.CSSProperties = {
+  color: '#c0c0d0',
   padding: '4px 0',
   borderBottom: '1px solid rgba(255,255,255,0.05)',
 }

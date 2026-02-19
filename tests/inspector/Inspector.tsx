@@ -3,6 +3,7 @@ import { preprocessFrame, analyzeImage } from '@/services/preprocessing.ts'
 import type { PreprocessOptions, ImageAnalysis } from '@/services/preprocessing.ts'
 import { ocrModels, getOCRModel, getDefaultOCRModel } from '@/services/ocr/registry.ts'
 import { getDefaultTranslationModel } from '@/services/translation/registry.ts'
+import { translatePhrases } from '@/services/translation/phrase.ts'
 import {
   filterByConfidence,
   filterByContent,
@@ -30,6 +31,7 @@ interface PipelineOutput {
   rawOCR: OCRResult | null
   filteredLines: OCRLine[]
   translations: TranslationResult[]
+  phraseTranslations: string[] | null
   timings: StageTimings
 }
 
@@ -38,6 +40,7 @@ const EMPTY_OUTPUT: PipelineOutput = {
   rawOCR: null,
   filteredLines: [],
   translations: [],
+  phraseTranslations: null,
   timings: { preprocessing: 0, ocr: 0, filtering: 0, translation: 0 },
 }
 
@@ -288,11 +291,12 @@ export function Inspector() {
 
         if (runId !== runIdRef.current) return
 
-        // Stage 4: Translation
+        // Stage 4: Dictionary translation (fast, runs immediately)
         setStatus('Translating...')
         const t3 = performance.now()
         let translations: TranslationResult[] = []
         const fullText = filteredLines.map((l) => l.text).join('')
+        const lineTexts = filteredLines.map((l) => l.text)
         if (fullText.length > 0) {
           const translationModel = getDefaultTranslationModel()
           await translationModel.initialize()
@@ -302,9 +306,23 @@ export function Inspector() {
 
         if (runId !== runIdRef.current) return
 
-        setOutput({ preprocessed, rawOCR, filteredLines, translations, timings })
+        // Show dictionary results immediately
+        setOutput({ preprocessed, rawOCR, filteredLines, translations, phraseTranslations: null, timings })
         const totalMs = Object.values(timings).reduce((a, b) => a + b, 0)
         setStatus(`Done in ${totalMs.toFixed(0)}ms`)
+
+        // Stage 5: Phrase translation (async, may download ~50 MB model)
+        // Runs in the background so it doesn't block the main results.
+        if (lineTexts.length > 0) {
+          setStatus(`Done in ${totalMs.toFixed(0)}ms — loading phrase model...`)
+          translatePhrases(lineTexts).then((phraseResult) => {
+            if (runId !== runIdRef.current) return
+            setOutput((prev) => ({ ...prev, phraseTranslations: phraseResult }))
+            setStatus(`Done in ${totalMs.toFixed(0)}ms`)
+          }).catch(() => {
+            // Phrase translation is best-effort; don't fail the pipeline
+          })
+        }
       } catch (err) {
         if (runId === runIdRef.current) {
           setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`)
@@ -488,6 +506,7 @@ export function Inspector() {
             <ResultsPanel
               filteredLines={output.filteredLines}
               translations={output.translations}
+              phraseTranslations={output.phraseTranslations}
             />
           ) : (
             <Placeholder text={output.rawOCR ? 'No results' : 'Waiting...'} />
