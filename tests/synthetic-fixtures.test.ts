@@ -194,7 +194,8 @@ describe('synthetic fixtures', () => {
           return
         }
 
-        const output = preprocessFrame(imageData)
+        // Use auto: false to keep dimensions predictable for assertions
+        const output = preprocessFrame(imageData, { auto: false })
 
         // Output should be same dimensions
         expect(output.width).toBe(imageData.width)
@@ -219,7 +220,8 @@ describe('synthetic fixtures', () => {
         const imageData = loadFixtureImage(name)
         if (!imageData) return
 
-        const output = preprocessFrame(imageData)
+        // Use auto: false to keep dimensions predictable for assertions
+        const output = preprocessFrame(imageData, { auto: false })
         expect(output.width).toBe(imageData.width)
         expect(output.height).toBe(imageData.height)
 

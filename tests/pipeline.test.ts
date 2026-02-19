@@ -23,9 +23,10 @@ import {
 // ---- Preprocessing tests ----
 
 describe('preprocessing', () => {
+  // Use auto: false in dimension-sensitive tests to avoid auto-upscaling small test images
   it('should return an ImageData of the same dimensions', () => {
     const input = createImageData(100, 80)
-    const output = preprocessFrame(input)
+    const output = preprocessFrame(input, { auto: false })
     expect(output.width).toBe(100)
     expect(output.height).toBe(80)
     expect(output.data.length).toBe(100 * 80 * 4)
@@ -33,7 +34,7 @@ describe('preprocessing', () => {
 
   it('should produce a binary image (only black and white pixels)', () => {
     const input = createTextLikeImage(200, 100)
-    const output = preprocessFrame(input)
+    const output = preprocessFrame(input, { auto: false })
 
     for (let i = 0; i < output.data.length; i += 4) {
       const r = output.data[i]
@@ -50,7 +51,7 @@ describe('preprocessing', () => {
 
   it('should preserve text-like regions as dark on light', () => {
     const input = createTextLikeImage(200, 100)
-    const output = preprocessFrame(input)
+    const output = preprocessFrame(input, { auto: false })
 
     // The center of the image (where the "text" stripe is) should have
     // a significant number of black pixels
@@ -75,6 +76,7 @@ describe('preprocessing', () => {
   it('should accept custom options without errors', () => {
     const input = createImageData(50, 50)
     const opts: PreprocessOptions = {
+      auto: false,
       adaptiveBlockSize: 31,
       adaptiveC: 15,
       blur: false,
@@ -86,8 +88,8 @@ describe('preprocessing', () => {
 
   it('should produce different output with different block sizes', () => {
     const input = createTextLikeImage(200, 100)
-    const out1 = preprocessFrame(input, { adaptiveBlockSize: 11 })
-    const out2 = preprocessFrame(input, { adaptiveBlockSize: 41 })
+    const out1 = preprocessFrame(input, { auto: false, adaptiveBlockSize: 11 })
+    const out2 = preprocessFrame(input, { auto: false, adaptiveBlockSize: 41 })
 
     // The outputs should differ in at least some pixels
     let diffCount = 0
@@ -100,14 +102,14 @@ describe('preprocessing', () => {
 
   it('should not crash on a 1x1 image', () => {
     const input = createImageData(1, 1)
-    const output = preprocessFrame(input)
+    const output = preprocessFrame(input, { auto: false })
     expect(output.width).toBe(1)
     expect(output.height).toBe(1)
   })
 
   it('should handle all-white input gracefully', () => {
     const input = createImageData(50, 50, [255, 255, 255, 255])
-    const output = preprocessFrame(input)
+    const output = preprocessFrame(input, { auto: false })
     // All-white should threshold to all-white (since every pixel == mean)
     for (let i = 0; i < output.data.length; i += 4) {
       expect(output.data[i]).toBe(255)
@@ -116,12 +118,28 @@ describe('preprocessing', () => {
 
   it('should handle all-black input gracefully', () => {
     const input = createImageData(50, 50, [0, 0, 0, 255])
-    const output = preprocessFrame(input)
+    const output = preprocessFrame(input, { auto: false })
     // All-black, after normalization range=0, threshold produces all-white
     // (since pixel == mean and is NOT < mean - C)
     for (let i = 0; i < output.data.length; i += 4) {
       expect(output.data[i]).toBe(255)
     }
+  })
+
+  it('should auto-upscale small images when auto is enabled', () => {
+    const input = createImageData(100, 80)
+    const output = preprocessFrame(input, { auto: true })
+    // min(100,80)=80 < 400, so auto-upscale should kick in
+    expect(output.width).toBeGreaterThan(100)
+    expect(output.height).toBeGreaterThan(80)
+  })
+
+  it('should not auto-upscale large images', () => {
+    const input = createImageData(500, 400)
+    const output = preprocessFrame(input, { auto: true })
+    // min(500,400)=400 >= 400, no upscale
+    expect(output.width).toBe(500)
+    expect(output.height).toBe(400)
   })
 })
 
@@ -321,7 +339,8 @@ describe('segmentation', () => {
 
 describe('preprocessing presets', () => {
   it('should have all required fields in every preset', () => {
-    const requiredKeys: (keyof typeof PRESETS.default)[] = [
+    const requiredKeys: (keyof typeof PRESETS.auto)[] = [
+      'auto',
       'adaptiveBlockSize',
       'adaptiveC',
       'blur',

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { preprocessFrame } from '@/services/preprocessing.ts'
-import type { PreprocessOptions } from '@/services/preprocessing.ts'
+import { preprocessFrame, analyzeImage } from '@/services/preprocessing.ts'
+import type { PreprocessOptions, ImageAnalysis } from '@/services/preprocessing.ts'
 import { getDefaultOCRModel } from '@/services/ocr/registry.ts'
 import { getDefaultTranslationModel } from '@/services/translation/registry.ts'
 import {
@@ -16,6 +16,7 @@ import { PRESETS, type PipelineParams } from '@/services/preprocessing-presets.t
 import { ParameterPanel } from './ParameterPanel.tsx'
 import { StagePanel } from './StagePanel.tsx'
 import { ResultsPanel } from './ResultsPanel.tsx'
+import { CameraCapture } from './CameraCapture.tsx'
 
 interface StageTimings {
   preprocessing: number
@@ -40,24 +41,84 @@ const EMPTY_OUTPUT: PipelineOutput = {
   timings: { preprocessing: 0, ocr: 0, filtering: 0, translation: 0 },
 }
 
+// ---------------------------------------------------------------------------
+// Fixture grouping helpers
+// ---------------------------------------------------------------------------
+
+interface FixtureGroup {
+  label: string
+  items: { name: string; display: string }[]
+}
+
+function groupFixtures(names: string[]): FixtureGroup[] {
+  const manual: FixtureGroup = { label: 'Manual', items: [] }
+  const syntheticMap = new Map<string, { name: string; variant: string }[]>()
+
+  for (const name of names) {
+    if (!name.startsWith('synthetic-')) {
+      manual.items.push({ name, display: name })
+      continue
+    }
+
+    // synthetic-{id}-{variant} — variant is the last segment
+    const withoutPrefix = name.slice('synthetic-'.length)
+    const lastDash = withoutPrefix.lastIndexOf('-')
+    if (lastDash === -1) {
+      manual.items.push({ name, display: name })
+      continue
+    }
+    const fixtureId = withoutPrefix.slice(0, lastDash)
+    const variant = withoutPrefix.slice(lastDash + 1)
+
+    if (!syntheticMap.has(fixtureId)) syntheticMap.set(fixtureId, [])
+    syntheticMap.get(fixtureId)!.push({ name, variant })
+  }
+
+  const groups: FixtureGroup[] = []
+  if (manual.items.length > 0) groups.push(manual)
+
+  if (syntheticMap.size > 0) {
+    const syntheticGroup: FixtureGroup = { label: 'Synthetic', items: [] }
+    for (const [id, variants] of [...syntheticMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      for (const v of variants.sort((a, b) => a.variant.localeCompare(b.variant))) {
+        syntheticGroup.items.push({ name: v.name, display: `${id} (${v.variant})` })
+      }
+    }
+    groups.push(syntheticGroup)
+  }
+
+  return groups
+}
+
+// ---------------------------------------------------------------------------
+// Inspector
+// ---------------------------------------------------------------------------
+
 export function Inspector() {
-  const [params, setParams] = useState<PipelineParams>({ ...PRESETS.default })
+  const [params, setParams] = useState<PipelineParams>({ ...PRESETS.auto })
   const [imageData, setImageData] = useState<ImageData | null>(null)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [output, setOutput] = useState<PipelineOutput>(EMPTY_OUTPUT)
   const [running, setRunning] = useState(false)
   const [status, setStatus] = useState<string>('Load an image to begin')
-  const [fixtures, setFixtures] = useState<string[]>([])
+  const [fixtureGroups, setFixtureGroups] = useState<FixtureGroup[]>([])
+  const [dragging, setDragging] = useState(false)
+  const [analysis, setAnalysis] = useState<ImageAnalysis | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const runIdRef = useRef(0)
+  const dragCountRef = useRef(0)
 
-  // Discover fixture images on mount
+  // Discover fixtures on mount
   useEffect(() => {
-    // We can't do fs listing from browser, so we fetch the meta files
-    // and infer image names. The user adds images manually.
-    const knownFixtures = ['menu-simple', 'hotel-card', 'emergency-exit']
-    setFixtures(knownFixtures)
+    fetch('/fixtures/_list')
+      .then((r) => r.json())
+      .then((names: string[]) => setFixtureGroups(groupFixtures(names)))
+      .catch(() => setFixtureGroups([]))
   }, [])
+
+  // ---------------------------------------------------------------------------
+  // Image loading
+  // ---------------------------------------------------------------------------
 
   const loadImageFromFile = useCallback((file: File) => {
     const url = URL.createObjectURL(file)
@@ -77,12 +138,11 @@ export function Inspector() {
   }, [])
 
   const loadFixtureByName = useCallback((name: string) => {
-    // Try common image extensions
-    const extensions = ['.jpg', '.jpeg', '.png', '.webp']
+    const extensions = ['.png', '.jpg', '.jpeg', '.webp']
     let loaded = false
 
     for (const ext of extensions) {
-      const url = `/tests/fixtures/${name}${ext}`
+      const url = `/fixtures/${name}${ext}`
       const img = new Image()
       img.onload = () => {
         if (loaded) return
@@ -102,6 +162,77 @@ export function Inspector() {
     }
   }, [])
 
+  const handleCameraCapture = useCallback((data: ImageData, objectUrl: string) => {
+    setImageData(data)
+    setImageSrc(objectUrl)
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // Clipboard paste
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    function handlePaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items
+      if (!items) return
+
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault()
+          const file = item.getAsFile()
+          if (file) loadImageFromFile(file)
+          return
+        }
+      }
+    }
+
+    document.addEventListener('paste', handlePaste)
+    return () => document.removeEventListener('paste', handlePaste)
+  }, [loadImageFromFile])
+
+  // ---------------------------------------------------------------------------
+  // Drag and drop
+  // ---------------------------------------------------------------------------
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCountRef.current++
+    if (e.dataTransfer.types.includes('Files')) {
+      setDragging(true)
+    }
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCountRef.current--
+    if (dragCountRef.current === 0) {
+      setDragging(false)
+    }
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      dragCountRef.current = 0
+      setDragging(false)
+
+      const file = e.dataTransfer.files[0]
+      if (file && file.type.startsWith('image/')) {
+        loadImageFromFile(file)
+      }
+    },
+    [loadImageFromFile],
+  )
+
+  // ---------------------------------------------------------------------------
+  // Pipeline execution
+  // ---------------------------------------------------------------------------
+
   const runPipeline = useCallback(
     async (img: ImageData, p: PipelineParams) => {
       const runId = ++runIdRef.current
@@ -115,9 +246,13 @@ export function Inspector() {
         setStatus('Preprocessing...')
         const t0 = performance.now()
         const preprocessOpts: PreprocessOptions = {
+          auto: p.auto,
           adaptiveBlockSize: p.adaptiveBlockSize,
           adaptiveC: p.adaptiveC,
           blur: p.blur,
+          median: p.median,
+          morphOpen: p.morphOpen,
+          upscale: p.upscale,
         }
         const preprocessed = preprocessFrame(img, preprocessOpts)
         timings.preprocessing = performance.now() - t0
@@ -191,22 +326,36 @@ export function Inspector() {
     [imageData, runPipeline],
   )
 
-  // Run immediately when image changes
+  // Run analysis + pipeline when image changes
   useEffect(() => {
     if (imageData) {
+      setAnalysis(analyzeImage(imageData))
       runPipeline(imageData, params)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageData])
 
   return (
-    <div style={{ padding: 20, maxWidth: 1400, margin: '0 auto' }}>
+    <div
+      style={{ padding: 20, maxWidth: 1400, margin: '0 auto', position: 'relative' }}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Drag overlay */}
+      {dragging && (
+        <div style={dropOverlayStyle}>
+          <div style={dropLabelStyle}>Drop image here</div>
+        </div>
+      )}
+
       <h1 style={{ margin: '0 0 16px', fontSize: 24, color: '#e94560' }}>
         Yomeru Pipeline Inspector
       </h1>
 
-      {/* Image selection */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+      {/* Image selection toolbar */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <select
           onChange={(e) => {
             if (e.target.value) loadFixtureByName(e.target.value)
@@ -217,15 +366,19 @@ export function Inspector() {
           <option value="" disabled>
             Select test image...
           </option>
-          {fixtures.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
+          {fixtureGroups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.items.map((item) => (
+                <option key={item.name} value={item.name}>
+                  {item.display}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
 
         <label style={buttonStyle}>
-          Upload custom image
+          Upload
           <input
             type="file"
             accept="image/*"
@@ -237,8 +390,14 @@ export function Inspector() {
           />
         </label>
 
-        <span style={{ color: '#a0a0b0', fontSize: 14 }}>
+        <CameraCapture onCapture={handleCameraCapture} />
+
+        <span style={{ color: '#a0a0b0', fontSize: 13 }}>
           {running ? '...' : status}
+        </span>
+
+        <span style={hintStyle}>
+          Paste or drag-and-drop an image
         </span>
       </div>
 
@@ -306,6 +465,20 @@ export function Inspector() {
           )}
         </StagePanel>
       </div>
+
+      {/* Auto-detection info */}
+      {analysis && params.auto && (
+        <div style={analysisBarStyle}>
+          <span style={{ color: '#e94560', fontWeight: 600 }}>Auto-detect:</span>
+          <span>
+            Noise: {(analysis.noiseLevel * 100).toFixed(1)}%
+            {analysis.isNoisy ? ' (noisy)' : ' (clean)'}
+          </span>
+          <span>Median: {analysis.recommendedMedian ? 'ON' : 'off'}</span>
+          <span>Upscale: {analysis.recommendedUpscale}x</span>
+          <span>Despeckle: {analysis.recommendedDespeckle ? 'ON' : 'off'}</span>
+        </div>
+      )}
 
       {/* Stats bar */}
       {output.rawOCR && (
@@ -476,6 +649,25 @@ const buttonStyle: React.CSSProperties = {
   display: 'inline-block',
 }
 
+const hintStyle: React.CSSProperties = {
+  color: '#666',
+  fontSize: 12,
+  marginLeft: 'auto',
+}
+
+const analysisBarStyle: React.CSSProperties = {
+  marginTop: 12,
+  padding: '10px 16px',
+  background: '#1a1a2e',
+  border: '1px solid #e9456040',
+  borderRadius: 8,
+  display: 'flex',
+  gap: 16,
+  fontSize: 13,
+  color: '#a0a0b0',
+  flexWrap: 'wrap',
+}
+
 const statsBarStyle: React.CSSProperties = {
   marginTop: 12,
   padding: '10px 16px',
@@ -486,4 +678,23 @@ const statsBarStyle: React.CSSProperties = {
   fontSize: 13,
   color: '#a0a0b0',
   flexWrap: 'wrap',
+}
+
+const dropOverlayStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(233, 69, 96, 0.12)',
+  border: '3px dashed #e94560',
+  borderRadius: 12,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 999,
+  pointerEvents: 'none',
+}
+
+const dropLabelStyle: React.CSSProperties = {
+  color: '#e94560',
+  fontSize: 24,
+  fontWeight: 600,
 }

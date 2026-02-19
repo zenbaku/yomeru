@@ -21,7 +21,7 @@ export function ParameterPanel({ params, onChange, presets }: Props) {
             const preset = presets[e.target.value]
             if (preset) onChange({ ...preset })
           }}
-          defaultValue="default"
+          defaultValue="auto"
           style={selectStyle}
         >
           {Object.keys(presets).map((key) => (
@@ -37,27 +37,53 @@ export function ParameterPanel({ params, onChange, presets }: Props) {
         <fieldset style={fieldsetStyle}>
           <legend style={legendStyle}>Preprocessing</legend>
 
-          <Slider
-            label="Adaptive block size"
-            value={params.adaptiveBlockSize}
-            min={3}
-            max={51}
-            step={2}
-            onChange={(v) => update({ adaptiveBlockSize: v })}
-          />
-          <Slider
-            label="Adaptive C constant"
-            value={params.adaptiveC}
-            min={0}
-            max={30}
-            step={1}
-            onChange={(v) => update({ adaptiveC: v })}
-          />
           <Checkbox
-            label="Blur enabled"
-            checked={params.blur}
-            onChange={(v) => update({ blur: v })}
+            label="Auto-detect"
+            checked={params.auto}
+            onChange={(v) => update({ auto: v })}
           />
+
+          <div style={{ opacity: params.auto ? 0.4 : 1, pointerEvents: params.auto ? 'none' : 'auto' }}>
+            <Slider
+              label="Adaptive block size"
+              value={params.adaptiveBlockSize}
+              min={3}
+              max={51}
+              step={2}
+              onChange={(v) => update({ adaptiveBlockSize: v })}
+            />
+            <Slider
+              label="Adaptive C constant"
+              value={params.adaptiveC}
+              min={0}
+              max={30}
+              step={1}
+              onChange={(v) => update({ adaptiveC: v })}
+            />
+            <Checkbox
+              label="Blur enabled"
+              checked={params.blur}
+              onChange={(v) => update({ blur: v })}
+            />
+            <Checkbox
+              label="Median filter"
+              checked={params.median}
+              onChange={(v) => update({ median: v })}
+            />
+            <Checkbox
+              label="Despeckle"
+              checked={params.morphOpen}
+              onChange={(v) => update({ morphOpen: v })}
+            />
+            <Slider
+              label="Upscale"
+              value={params.upscale}
+              min={1}
+              max={4}
+              step={1}
+              onChange={(v) => update({ upscale: v })}
+            />
+          </div>
         </fieldset>
 
         {/* OCR Filtering section */}
