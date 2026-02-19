@@ -73,7 +73,7 @@ function ModelCard({ model }: { model: OCRModel | TranslationModel }) {
   const [downloaded, setDownloaded] = useState<boolean | null>(null)
 
   useEffect(() => {
-    model.isDownloaded().then(setDownloaded)
+    model.isDownloaded().then(setDownloaded).catch(() => setDownloaded(false))
   }, [model])
 
   const sizeMB = (model.size / 1024 / 1024).toFixed(1)

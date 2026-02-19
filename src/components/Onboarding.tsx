@@ -36,8 +36,9 @@ export function Onboarding({ onReady }: OnboardingProps) {
       } else {
         setStage('needs-download')
       }
-    } catch {
-      setStage('needs-download')
+    } catch (err) {
+      setStage('error')
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to initialize models')
     }
   }
 
