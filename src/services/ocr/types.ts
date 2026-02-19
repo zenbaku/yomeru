@@ -25,4 +25,5 @@ export interface OCRModel {
   initialize: (onProgress?: (p: number) => void) => Promise<void>
   recognize: (image: ImageData) => Promise<OCRResult>
   terminate: () => Promise<void>
+  clearCache: () => Promise<void>
 }

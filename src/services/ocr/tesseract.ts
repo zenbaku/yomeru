@@ -10,9 +10,14 @@ export const tesseractJpn: OCRModel = {
   size: 10_000_000, // ~10MB (WASM core + jpn trained data)
 
   async isDownloaded() {
-    // Tesseract.js handles its own caching via browser cache
-    // If the worker has been created before, the data is likely cached
-    return worker !== null
+    if (worker) return true
+    try {
+      const cache = await caches.open('tesseract-assets')
+      const keys = await cache.keys()
+      return keys.some((req) => req.url.includes('traineddata'))
+    } catch {
+      return false
+    }
   },
 
   async initialize(onProgress) {
@@ -75,6 +80,15 @@ export const tesseractJpn: OCRModel = {
     if (worker) {
       await worker.terminate()
       worker = null
+    }
+  },
+
+  async clearCache() {
+    await this.terminate()
+    try {
+      await caches.delete('tesseract-assets')
+    } catch {
+      // Cache API may not be available
     }
   },
 }

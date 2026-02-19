@@ -1,4 +1,5 @@
 import type { TranslationPipeline } from '@huggingface/transformers'
+import type { ModelInfo } from './types.ts'
 
 const MODEL_ID = 'Xenova/opus-mt-ja-en'
 /** Opus-MT typically supports up to ~512 tokens; cap input chars to stay safe. */
@@ -116,4 +117,28 @@ export async function terminatePhraseModel(): Promise<void> {
     translator = null
     initPromise = null
   }
+}
+
+/**
+ * Delete all cached phrase model data from the browser.
+ */
+export async function clearPhraseModelCache(): Promise<void> {
+  await terminatePhraseModel()
+  try {
+    await caches.delete('transformers-cache')
+    await caches.delete('hf-models')
+  } catch {
+    // Cache API may not be available
+  }
+}
+
+/** Phrase translation model info for the Models page. */
+export const phraseModelInfo: ModelInfo = {
+  id: 'opus-mt-ja-en',
+  name: 'Opus-MT Ja→En',
+  description: 'Neural machine translation for full phrases and sentences (~50 MB)',
+  size: 50_000_000,
+  isDownloaded: isPhraseModelDownloaded,
+  initialize: initializePhraseModel,
+  clearCache: clearPhraseModelCache,
 }

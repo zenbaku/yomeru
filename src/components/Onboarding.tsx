@@ -20,34 +20,53 @@ export function Onboarding({ onReady }: OnboardingProps) {
   }, [])
 
   async function checkAssets() {
+    setStage('checking')
+    setStatusText('Checking assets...')
     try {
-      const [dictLoaded, phraseLoaded] = await Promise.all([
+      const ocrModel = getDefaultOCRModel()
+      const [dictLoaded, ocrLoaded, phraseLoaded] = await Promise.all([
         isDictionaryLoaded(),
+        ocrModel.isDownloaded(),
         isPhraseModelDownloaded(),
       ])
-      if (dictLoaded && phraseLoaded) {
-        // All assets loaded, initialize models
+
+      if (dictLoaded && ocrLoaded && phraseLoaded) {
+        // All assets cached — initialize models with individual error handling
         setStatusText('Initializing models...')
-        await getDefaultOCRModel().initialize((p) => setProgress(p * 0.5))
-        await initializePhraseModel((p) => setProgress(0.5 + p * 0.5))
+
+        try {
+          await ocrModel.initialize((p) => setProgress(p * 0.5))
+        } catch (err) {
+          console.warn('OCR model init failed, will re-download:', err)
+          setStage('needs-download')
+          return
+        }
+
+        try {
+          await initializePhraseModel((p) => setProgress(0.5 + p * 0.5))
+        } catch (err) {
+          console.warn('Phrase model init failed, will re-download:', err)
+          setStage('needs-download')
+          return
+        }
+
         setStage('ready')
-        // Auto-proceed after brief display
         setTimeout(onReady, 500)
       } else {
         setStage('needs-download')
       }
     } catch (err) {
       setStage('error')
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to initialize models')
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to check assets')
     }
   }
 
   async function startDownload() {
     setStage('downloading')
+    setProgress(0)
     try {
       // Step 1: Load dictionary into IndexedDB (0-30%)
       setStatusText('Loading dictionary...')
-      setProgress(0)
       await loadDictionaryFromJSON((loaded, total) => {
         setProgress(loaded / total * 0.3)
       })
@@ -172,7 +191,7 @@ export function Onboarding({ onReady }: OnboardingProps) {
             {errorMsg}
           </p>
           <button
-            onClick={startDownload}
+            onClick={checkAssets}
             style={{
               padding: '10px 24px',
               background: 'rgba(255,255,255,0.1)',

@@ -4,6 +4,7 @@ import {
   isDictionaryLoaded,
   loadDictionaryFromJSON,
   lookupWord,
+  clearDictionary,
 } from '../storage/indexeddb.ts'
 
 export const jmdictModel: TranslationModel = {
@@ -55,5 +56,9 @@ export const jmdictModel: TranslationModel = {
 
   async terminate() {
     // Nothing to clean up — IndexedDB persists
+  },
+
+  async clearCache() {
+    await clearDictionary()
   },
 }
