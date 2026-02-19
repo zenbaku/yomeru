@@ -5,6 +5,7 @@ export type CameraStatus = 'idle' | 'starting' | 'active' | 'denied' | 'error'
 export function useCamera() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [status, setStatus] = useState<CameraStatus>('idle')
 
   const start = useCallback(async () => {
@@ -50,7 +51,11 @@ export function useCamera() {
     const video = videoRef.current
     if (!video || video.readyState < 2) return null
 
-    const canvas = document.createElement('canvas')
+    // Reuse a single offscreen canvas to avoid leaking GPU-backed surfaces
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement('canvas')
+    }
+    const canvas = canvasRef.current
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     const ctx = canvas.getContext('2d')!
@@ -62,6 +67,12 @@ export function useCamera() {
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop())
+      }
+      // Release canvas backing store
+      if (canvasRef.current) {
+        canvasRef.current.width = 0
+        canvasRef.current.height = 0
+        canvasRef.current = null
       }
     }
   }, [])

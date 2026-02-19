@@ -2,6 +2,8 @@ import Tesseract from 'tesseract.js'
 import type { OCRModel, OCRResult } from './types.ts'
 
 let worker: Tesseract.Worker | null = null
+// Reuse a single canvas to avoid leaking GPU-backed surfaces across OCR calls
+let ocrCanvas: HTMLCanvasElement | null = null
 
 export const tesseractJpn: OCRModel = {
   id: 'tesseract-jpn',
@@ -37,14 +39,19 @@ export const tesseractJpn: OCRModel = {
       throw new Error('Tesseract worker not initialized. Call initialize() first.')
     }
 
-    // Convert ImageData to canvas for Tesseract
-    const canvas = document.createElement('canvas')
-    canvas.width = image.width
-    canvas.height = image.height
-    const ctx = canvas.getContext('2d')!
+    // Reuse a single offscreen canvas for Tesseract input
+    if (!ocrCanvas) ocrCanvas = document.createElement('canvas')
+    ocrCanvas.width = image.width
+    ocrCanvas.height = image.height
+    const ctx = ocrCanvas.getContext('2d')!
     ctx.putImageData(image, 0, 0)
 
-    const result = await worker.recognize(canvas, {}, { blocks: true, text: true })
+    const result = await worker.recognize(ocrCanvas, {}, { blocks: true, text: true })
+
+    // Release canvas backing store while idle to free memory
+    ocrCanvas.width = 0
+    ocrCanvas.height = 0
+
     const page = result.data
 
     const lines = (page.blocks ?? []).flatMap((block) =>
@@ -80,6 +87,11 @@ export const tesseractJpn: OCRModel = {
     if (worker) {
       await worker.terminate()
       worker = null
+    }
+    if (ocrCanvas) {
+      ocrCanvas.width = 0
+      ocrCanvas.height = 0
+      ocrCanvas = null
     }
   },
 
