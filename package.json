@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsx scripts/build-dictionary.ts && tsc -b && vite build",
+    "build": "tsc -b && vite build",
     "build:dict": "tsx scripts/build-dictionary.ts",
     "lint": "eslint .",
     "preview": "vite preview"

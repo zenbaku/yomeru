@@ -5,9 +5,6 @@ node_modules
 dist
 dist-ssr
 
-# Generated dictionary (rebuild with `npm run build:dict`)
-public/dict/jmdict-lookup.json
-
 # Environment / local config
 *.local
 .env
