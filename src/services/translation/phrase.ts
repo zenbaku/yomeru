@@ -1,6 +1,8 @@
 import type { TranslationPipeline } from '@huggingface/transformers'
 
 const MODEL_ID = 'Xenova/opus-mt-ja-en'
+/** Opus-MT typically supports up to ~512 tokens; cap input chars to stay safe. */
+const MAX_INPUT_LENGTH = 300
 
 let translator: TranslationPipeline | null = null
 let initPromise: Promise<void> | null = null
@@ -41,17 +43,23 @@ export async function initializePhraseModel(
         }
       },
     }) as TranslationPipeline
-  })()
+  })().catch((err) => {
+    // Reset so the next call can retry instead of returning a rejected promise forever
+    initPromise = null
+    translator = null
+    throw err
+  })
 
   return initPromise
 }
 
 /**
- * Translate a full Japanese phrase/sentence to English using the local Opus-MT model.
- * Returns null if the model hasn't been initialized yet.
+ * Translate a single phrase/sentence to English using the local Opus-MT model.
+ * Returns null if the model isn't ready or translation fails.
  */
 export async function translatePhrase(text: string): Promise<string | null> {
-  if (!text.trim()) return null
+  const trimmed = text.trim()
+  if (!trimmed) return null
 
   // Ensure model is loaded (no-op if already initialized)
   await initializePhraseModel()
@@ -59,14 +67,40 @@ export async function translatePhrase(text: string): Promise<string | null> {
   if (!translator) return null
 
   try {
-    const output = await translator(text)
+    // Truncate to avoid WASM heap overflow on long text
+    const input = trimmed.length > MAX_INPUT_LENGTH
+      ? trimmed.slice(0, MAX_INPUT_LENGTH)
+      : trimmed
+
+    const output = await translator(input)
     const result = Array.isArray(output) ? output[0] : output
-    const translated = (result as { translation_text: string }).translation_text
-    if (!translated || translated === text) return null
+    const translated = result && typeof result === 'object'
+      ? (result as { translation_text?: string }).translation_text
+      : undefined
+    if (!translated || translated === input) return null
     return translated
   } catch {
     return null
   }
+}
+
+/**
+ * Translate multiple OCR lines in sequence.
+ * Returns an array of translations (null entries filtered out), or null if none succeeded.
+ */
+export async function translatePhrases(lines: string[]): Promise<string[] | null> {
+  if (lines.length === 0) return null
+
+  // Ensure model is loaded once before processing all lines
+  await initializePhraseModel()
+  if (!translator) return null
+
+  const results: string[] = []
+  for (const line of lines) {
+    const t = await translatePhrase(line)
+    if (t) results.push(t)
+  }
+  return results.length > 0 ? results : null
 }
 
 /**
