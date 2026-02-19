@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { ocrModels } from '../services/ocr/registry.ts'
 import { translationModels } from '../services/translation/registry.ts'
+import { phraseModelInfo } from '../services/translation/phrase.ts'
+import type { ModelInfo } from '../services/translation/types.ts'
 import type { OCRModel } from '../services/ocr/types.ts'
 import type { TranslationModel } from '../services/translation/types.ts'
 
@@ -39,20 +41,20 @@ export function ModelManager({ onBack }: ModelManagerProps) {
       </div>
 
       {/* OCR Models */}
-      <h2 style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
-        OCR Models
-      </h2>
+      <SectionHeader>OCR Models</SectionHeader>
       {ocrModels.map((m) => (
         <ModelCard key={m.id} model={m} />
       ))}
 
       {/* Translation Models */}
-      <h2 style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 24, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
-        Translation Models
-      </h2>
+      <SectionHeader style={{ marginTop: 24 }}>Translation Models</SectionHeader>
       {translationModels.map((m) => (
         <ModelCard key={m.id} model={m} />
       ))}
+
+      {/* Phrase Translation */}
+      <SectionHeader style={{ marginTop: 24 }}>Phrase Translation</SectionHeader>
+      <ModelCard model={phraseModelInfo} />
 
       {/* Info */}
       <p style={{
@@ -62,21 +64,73 @@ export function ModelManager({ onBack }: ModelManagerProps) {
         textAlign: 'center',
         lineHeight: 1.5,
       }}>
-        More models coming soon. The architecture supports
-        swapping in different OCR engines and dictionaries.
+        Models are cached locally for offline use.
+        Delete a model to free storage, then re-download when needed.
       </p>
     </div>
   )
 }
 
-function ModelCard({ model }: { model: OCRModel | TranslationModel }) {
-  const [downloaded, setDownloaded] = useState<boolean | null>(null)
+function SectionHeader({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return (
+    <h2 style={{
+      fontSize: 14,
+      color: 'var(--text-secondary)',
+      marginBottom: 10,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+      ...style,
+    }}>
+      {children}
+    </h2>
+  )
+}
 
-  useEffect(() => {
+type AnyModel = OCRModel | TranslationModel | ModelInfo
+
+function ModelCard({ model }: { model: AnyModel }) {
+  const [downloaded, setDownloaded] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+
+  const checkStatus = useCallback(() => {
     model.isDownloaded().then(setDownloaded).catch(() => setDownloaded(false))
   }, [model])
 
+  useEffect(() => {
+    checkStatus()
+  }, [checkStatus])
+
   const sizeMB = (model.size / 1024 / 1024).toFixed(1)
+
+  async function handleDownload() {
+    setBusy(true)
+    setError(null)
+    setProgress(0)
+    try {
+      await model.initialize((p) => setProgress(p))
+      setDownloaded(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed')
+    } finally {
+      setBusy(false)
+      setProgress(0)
+    }
+  }
+
+  async function handleDelete() {
+    setBusy(true)
+    setError(null)
+    try {
+      await model.clearCache()
+      setDownloaded(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div style={{
@@ -85,6 +139,7 @@ function ModelCard({ model }: { model: OCRModel | TranslationModel }) {
       borderRadius: 10,
       marginBottom: 8,
     }}>
+      {/* Top row: name + status */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <span style={{ fontSize: 15, fontWeight: 600 }}>{model.name}</span>
@@ -108,9 +163,92 @@ function ModelCard({ model }: { model: OCRModel | TranslationModel }) {
           </span>
         )}
       </div>
+
+      {/* Description */}
       <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>
         {model.description}
       </p>
+
+      {/* Progress bar */}
+      {busy && progress > 0 && (
+        <div style={{
+          width: '100%',
+          height: 4,
+          background: 'rgba(255,255,255,0.08)',
+          borderRadius: 2,
+          marginTop: 10,
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            width: `${Math.round(progress * 100)}%`,
+            height: '100%',
+            background: 'var(--accent)',
+            borderRadius: 2,
+            transition: 'width 0.3s ease',
+          }} />
+        </div>
+      )}
+
+      {/* Error message */}
+      {error && (
+        <p style={{ fontSize: 12, color: 'var(--accent)', marginTop: 8 }}>
+          {error}
+        </p>
+      )}
+
+      {/* Action buttons */}
+      {downloaded !== null && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          {!downloaded && (
+            <ActionButton onClick={handleDownload} disabled={busy}>
+              {busy ? `Downloading ${Math.round(progress * 100)}%` : 'Download'}
+            </ActionButton>
+          )}
+          {downloaded && (
+            <ActionButton onClick={handleDelete} disabled={busy} variant="danger">
+              {busy ? 'Deleting...' : 'Delete'}
+            </ActionButton>
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+function ActionButton({
+  children,
+  onClick,
+  disabled,
+  variant = 'default',
+}: {
+  children: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+  variant?: 'default' | 'danger'
+}) {
+  const bg = variant === 'danger'
+    ? 'rgba(233, 69, 96, 0.15)'
+    : 'rgba(255,255,255,0.08)'
+  const color = variant === 'danger'
+    ? '#e94560'
+    : 'var(--text-secondary)'
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: '6px 14px',
+        fontSize: 12,
+        fontWeight: 600,
+        borderRadius: 6,
+        background: bg,
+        color: disabled ? 'rgba(255,255,255,0.25)' : color,
+        opacity: disabled ? 0.6 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+    >
+      {children}
+    </button>
   )
 }
