@@ -22,12 +22,9 @@ export function preprocessFrame(
   options?: PreprocessOptions,
 ): ImageData {
   const opts = { ...DEFAULTS, ...options }
-  const { width, height } = imageData
+  const { width, height, data: src } = imageData
 
-  // Work on a copy
-  const src = new Uint8ClampedArray(imageData.data)
-
-  // Step 1: Grayscale (luminance)
+  // Step 1: Grayscale (luminance) — read directly from input, no copy needed
   const gray = new Uint8Array(width * height)
   for (let i = 0; i < gray.length; i++) {
     const r = src[i * 4]
@@ -98,8 +95,9 @@ function adaptiveThreshold(
   blockSize: number,
   C: number,
 ): Uint8Array {
-  // Use integral image for fast mean computation
-  const integral = new Float64Array((width + 1) * (height + 1))
+  // Use integral image for fast mean computation.
+  // Float32 is sufficient: max block sum ≈ 441*255 = 112K, well within Float32 integer precision.
+  const integral = new Float32Array((width + 1) * (height + 1))
 
   // Build integral image
   for (let y = 1; y <= height; y++) {
