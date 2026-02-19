@@ -39,7 +39,7 @@ export const tesseractJpn: OCRModel = {
     const ctx = canvas.getContext('2d')!
     ctx.putImageData(image, 0, 0)
 
-    const result = await worker.recognize(canvas)
+    const result = await worker.recognize(canvas, {}, { blocks: true, text: true })
     const page = result.data
 
     const lines = (page.blocks ?? []).flatMap((block) =>
@@ -57,10 +57,18 @@ export const tesseractJpn: OCRModel = {
       )
     ).filter((line) => line.text.length > 0)
 
-    return {
-      lines,
-      fullText: page.text.trim(),
+    const fullText = page.text.trim()
+
+    // Fallback: if blocks didn't parse but we got raw text, create a single line
+    if (lines.length === 0 && fullText.length > 0) {
+      lines.push({
+        text: fullText,
+        confidence: page.confidence,
+        bbox: { x: 0, y: 0, width: image.width, height: image.height },
+      })
     }
+
+    return { lines, fullText }
   },
 
   async terminate() {

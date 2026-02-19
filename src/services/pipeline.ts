@@ -54,7 +54,9 @@ export async function runPipeline(
     state = { ...state, ocrResult }
     onState(state)
 
-    if (ocrResult.lines.length === 0) {
+    const fullText = ocrResult.fullText || ocrResult.lines.map((l) => l.text).join('')
+
+    if (fullText.length === 0) {
       state = { ...state, phase: 'done', translations: [] }
       onState(state)
       return
@@ -70,7 +72,6 @@ export async function runPipeline(
     state = { ...state, phase: 'translating' }
     onState(state)
 
-    const fullText = ocrResult.lines.map((l) => l.text).join('')
     const translations = await translationModel.translate(fullText)
 
     state = { ...state, phase: 'done', translations }

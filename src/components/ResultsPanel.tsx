@@ -3,20 +3,21 @@ import type { TranslationResult } from '../services/translation/types.ts'
 
 interface ResultsPanelProps {
   translations: TranslationResult[] | null
+  ocrText: string | null
   onClose: () => void
 }
 
-export function ResultsPanel({ translations, onClose }: ResultsPanelProps) {
+export function ResultsPanel({ translations, ocrText, onClose }: ResultsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(false)
 
+  const show = translations !== null
   useEffect(() => {
-    if (translations && translations.length > 0) {
-      setExpanded(true)
-    }
-  }, [translations])
+    if (show) setExpanded(true)
+    else setExpanded(false)
+  }, [show])
 
-  if (!translations || translations.length === 0) return null
+  if (!show) return null
 
   const hasResults = translations.some((t) => t.translations.length > 0)
 
@@ -77,14 +78,41 @@ export function ResultsPanel({ translations, onClose }: ResultsPanelProps) {
         padding: '0 16px 16px',
         paddingBottom: 'calc(16px + var(--safe-bottom))',
       }}>
-        {!hasResults && (
+        {/* Show raw OCR text */}
+        {ocrText && (
+          <div style={{
+            padding: '8px 12px',
+            marginBottom: 10,
+            background: 'rgba(255,255,255,0.04)',
+            borderRadius: 8,
+            fontSize: 13,
+            color: 'var(--text-secondary)',
+            lineHeight: 1.5,
+          }}>
+            <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Recognized:
+            </span>{' '}
+            <span style={{ color: 'var(--text-primary)' }}>{ocrText}</span>
+          </div>
+        )}
+        {translations.length === 0 && (
           <p style={{
             color: 'var(--text-secondary)',
             fontSize: 14,
             textAlign: 'center',
             padding: '12px 0',
           }}>
-            No translations found for recognized text.
+            No text recognized. Try moving closer or improving lighting.
+          </p>
+        )}
+        {translations.length > 0 && !hasResults && (
+          <p style={{
+            color: 'var(--text-secondary)',
+            fontSize: 13,
+            textAlign: 'center',
+            padding: '4px 0 8px',
+          }}>
+            No dictionary matches found.
           </p>
         )}
         {translations.map((t, i) => (

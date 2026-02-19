@@ -41,6 +41,7 @@ function App() {
 
       <ResultsPanel
         translations={pipeline.translations}
+        ocrText={pipeline.ocrResult?.fullText ?? null}
         onClose={pipeline.reset}
       />
 
