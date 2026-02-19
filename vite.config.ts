@@ -10,6 +10,11 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       injectRegister: false,
+      injectManifest: {
+        // Exclude large ONNX WASM files from precache — they are cached
+        // at runtime by the service worker's CacheFirst strategy instead.
+        globPatterns: ['**/*.{js,css,html,webmanifest,png}'],
+      },
       manifest: {
         name: 'Yomeru',
         short_name: 'Yomeru',
@@ -39,6 +44,10 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    // ONNX Runtime WASM + transformers.js are large by design
+    chunkSizeWarningLimit: 1000,
+  },
   server: {
     host: true,
     allowedHosts: ['.ts.net'],

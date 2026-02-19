@@ -14,6 +14,7 @@
     "test:inspector": "vite dev --config tests/inspector/vite.config.ts"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
     "idb": "^8.0.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

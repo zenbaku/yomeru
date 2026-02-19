@@ -5,6 +5,7 @@ interface InfoPanelProps {
   phase: PipelinePhase
   ocrText: string | null
   translations: TranslationResult[] | null
+  phraseTranslation: string | null
   error: string | null
   ocrOnly: boolean
   onOcrOnlyChange: (value: boolean) => void
@@ -12,7 +13,7 @@ interface InfoPanelProps {
   onReset: () => void
 }
 
-export function InfoPanel({ phase, ocrText, translations, error, ocrOnly, onOcrOnlyChange, onSettings, onReset }: InfoPanelProps) {
+export function InfoPanel({ phase, ocrText, translations, phraseTranslation, error, ocrOnly, onOcrOnlyChange, onSettings, onReset }: InfoPanelProps) {
   return (
     <div style={{
       flex: 1,
@@ -130,6 +131,35 @@ export function InfoPanel({ phase, ocrText, translations, error, ocrOnly, onOcrO
               Recognized:
             </span>{' '}
             <span style={{ color: 'var(--text-primary)' }}>{ocrText}</span>
+          </div>
+        )}
+
+        {/* Phrase translation */}
+        {phraseTranslation && (
+          <div style={{
+            padding: '10px 12px',
+            marginBottom: 10,
+            background: 'rgba(77, 171, 247, 0.08)',
+            border: '1px solid rgba(77, 171, 247, 0.2)',
+            borderRadius: 8,
+            lineHeight: 1.5,
+          }}>
+            <span style={{
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              color: 'rgba(77, 171, 247, 0.7)',
+            }}>
+              Translation:
+            </span>
+            <div style={{
+              fontSize: 15,
+              color: '#4dabf7',
+              marginTop: 2,
+              fontWeight: 500,
+            }}>
+              {phraseTranslation}
+            </div>
           </div>
         )}
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { isDictionaryLoaded, loadDictionaryFromJSON } from '../services/storage/indexeddb.ts'
 import { getDefaultOCRModel } from '../services/ocr/registry.ts'
+import { initializePhraseModel, isPhraseModelDownloaded } from '../services/translation/phrase.ts'
 
 interface OnboardingProps {
   onReady: () => void
@@ -20,11 +21,15 @@ export function Onboarding({ onReady }: OnboardingProps) {
 
   async function checkAssets() {
     try {
-      const dictLoaded = await isDictionaryLoaded()
-      if (dictLoaded) {
-        // Dictionary already loaded, initialize OCR model
-        setStatusText('Initializing OCR...')
-        await getDefaultOCRModel().initialize((p) => setProgress(p))
+      const [dictLoaded, phraseLoaded] = await Promise.all([
+        isDictionaryLoaded(),
+        isPhraseModelDownloaded(),
+      ])
+      if (dictLoaded && phraseLoaded) {
+        // All assets loaded, initialize models
+        setStatusText('Initializing models...')
+        await getDefaultOCRModel().initialize((p) => setProgress(p * 0.5))
+        await initializePhraseModel((p) => setProgress(0.5 + p * 0.5))
         setStage('ready')
         // Auto-proceed after brief display
         setTimeout(onReady, 500)
@@ -39,17 +44,23 @@ export function Onboarding({ onReady }: OnboardingProps) {
   async function startDownload() {
     setStage('downloading')
     try {
-      // Step 1: Load dictionary into IndexedDB
+      // Step 1: Load dictionary into IndexedDB (0-30%)
       setStatusText('Loading dictionary...')
       setProgress(0)
       await loadDictionaryFromJSON((loaded, total) => {
-        setProgress(loaded / total * 0.5) // 0-50% for dictionary
+        setProgress(loaded / total * 0.3)
       })
 
-      // Step 2: Initialize Tesseract (downloads WASM + trained data)
+      // Step 2: Initialize Tesseract / downloads WASM + trained data (30-55%)
       setStatusText('Downloading OCR model...')
       await getDefaultOCRModel().initialize((p) => {
-        setProgress(0.5 + p * 0.5) // 50-100% for OCR
+        setProgress(0.3 + p * 0.25)
+      })
+
+      // Step 3: Download translation model / ONNX weights (55-100%)
+      setStatusText('Downloading translation model...')
+      await initializePhraseModel((p) => {
+        setProgress(0.55 + p * 0.45)
       })
 
       setStage('ready')
@@ -89,7 +100,7 @@ export function Onboarding({ onReady }: OnboardingProps) {
       {stage === 'needs-download' && (
         <>
           <p style={{ color: 'var(--text-secondary)', fontSize: 13, maxWidth: 300 }}>
-            Yomeru needs to download language data (~15 MB) to work offline. This only happens once.
+            Yomeru needs to download language data and translation models (~50 MB) to work offline. This only happens once.
           </p>
           <button
             onClick={startDownload}
