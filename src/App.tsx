@@ -56,6 +56,7 @@ function App() {
         phase={pipeline.phase}
         ocrText={pipeline.ocrResult?.fullText ?? null}
         translations={pipeline.translations}
+        phraseTranslation={pipeline.phraseTranslation}
         error={pipeline.error}
         ocrOnly={pipeline.ocrOnly}
         onOcrOnlyChange={pipeline.setOcrOnly}
