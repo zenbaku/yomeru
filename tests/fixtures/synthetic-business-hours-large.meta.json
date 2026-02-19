@@ -1,0 +1,51 @@
+{
+  "description": "Business hours — 4 kanji compound [large]",
+  "expectedText": [
+    "営業時間"
+  ],
+  "difficulty": "medium",
+  "synthetic": true,
+  "groundTruth": {
+    "lines": [
+      "営業時間"
+    ],
+    "segmentation": [
+      [
+        "営業",
+        "時間"
+      ]
+    ],
+    "translations": [
+      {
+        "original": "営業",
+        "reading": "えいぎょう",
+        "translations": [
+          "business",
+          "trade",
+          "operations"
+        ],
+        "partOfSpeech": "n, vs"
+      },
+      {
+        "original": "時間",
+        "reading": "じかん",
+        "translations": [
+          "time",
+          "hour",
+          "period"
+        ],
+        "partOfSpeech": "n"
+      }
+    ]
+  },
+  "generationParams": {
+    "font": "Hiragino Sans",
+    "fontSize": 48,
+    "fg": "#000000",
+    "bg": "#ffffff",
+    "noise": 0,
+    "width": 240,
+    "height": 115,
+    "variant": "large"
+  }
+}

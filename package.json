@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run --config tests/vitest.config.ts",
     "test:watch": "vitest watch --config tests/vitest.config.ts",
-    "test:inspector": "vite dev --config tests/inspector/vite.config.ts"
+    "test:inspector": "vite dev --config tests/inspector/vite.config.ts",
+    "generate:fixtures": "tsx scripts/generate-synthetic-fixtures.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

@@ -1,0 +1,36 @@
+{
+  "description": "Tokyo station — 3 kanji compound [small]",
+  "expectedText": [
+    "東京駅"
+  ],
+  "difficulty": "easy",
+  "synthetic": true,
+  "groundTruth": {
+    "lines": [
+      "東京駅"
+    ],
+    "segmentation": [
+      [
+        "東京駅"
+      ]
+    ],
+    "translations": [
+      {
+        "original": "東京駅",
+        "reading": "",
+        "translations": [],
+        "partOfSpeech": ""
+      }
+    ]
+  },
+  "generationParams": {
+    "font": "Hiragino Sans",
+    "fontSize": 18,
+    "fg": "#000000",
+    "bg": "#ffffff",
+    "noise": 0,
+    "width": 72,
+    "height": 43,
+    "variant": "small"
+  }
+}

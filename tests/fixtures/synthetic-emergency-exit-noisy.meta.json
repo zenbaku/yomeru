@@ -1,0 +1,47 @@
+{
+  "description": "Emergency exit sign — 3 kanji compound [noisy]",
+  "expectedText": [
+    "非常口"
+  ],
+  "difficulty": "easy",
+  "synthetic": true,
+  "groundTruth": {
+    "lines": [
+      "非常口"
+    ],
+    "segmentation": [
+      [
+        "非",
+        "常口"
+      ]
+    ],
+    "translations": [
+      {
+        "original": "非",
+        "reading": "ひ",
+        "translations": [
+          "fault",
+          "error",
+          "mistake"
+        ],
+        "partOfSpeech": "n, pref"
+      },
+      {
+        "original": "常口",
+        "reading": "",
+        "translations": [],
+        "partOfSpeech": ""
+      }
+    ]
+  },
+  "generationParams": {
+    "font": "Hiragino Sans",
+    "fontSize": 32,
+    "fg": "#000000",
+    "bg": "#ffffff",
+    "noise": 0.05,
+    "width": 128,
+    "height": 77,
+    "variant": "noisy"
+  }
+}

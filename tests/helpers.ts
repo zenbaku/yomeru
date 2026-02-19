@@ -3,10 +3,33 @@ import { resolve, basename } from 'node:path'
 
 const FIXTURES_DIR = resolve(__dirname, 'fixtures')
 
+export interface GroundTruthTranslation {
+  original: string
+  reading: string
+  translations: string[]
+  partOfSpeech: string
+}
+
 export interface FixtureMeta {
   description: string
   expectedText: string[]
   difficulty: 'easy' | 'medium' | 'hard'
+  groundTruth?: {
+    lines: string[]
+    segmentation: string[][]
+    translations: GroundTruthTranslation[]
+  }
+  synthetic?: boolean
+  generationParams?: {
+    font: string
+    fontSize: number
+    fg: string
+    bg: string
+    noise: number
+    width: number
+    height: number
+    variant: string
+  }
 }
 
 /**
@@ -88,4 +111,49 @@ export function fixtureImageExists(name: string): string | null {
     if (existsSync(p)) return p
   }
   return null
+}
+
+/**
+ * List only synthetic fixture names (those with synthetic: true in metadata).
+ */
+export function listSyntheticFixtures(): string[] {
+  return listFixtures().filter((name) => {
+    const meta = loadFixtureMeta(name)
+    return meta?.synthetic === true
+  })
+}
+
+/**
+ * Load a fixture PNG as ImageData using node-canvas.
+ * Returns null if canvas is unavailable or the image doesn't exist.
+ */
+export function loadFixtureImage(name: string): ImageData | null {
+  const imagePath = fixtureImageExists(name)
+  if (!imagePath) return null
+
+  try {
+    // Dynamic import to avoid hard failure if canvas isn't available
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createCanvas, loadImage } = require('canvas')
+    const imageBuffer = readFileSync(imagePath)
+    // loadImage is async but we need sync — use the buffer overload via createImageBitmap workaround
+    // Actually, canvas loadImage supports Buffer synchronously in some versions.
+    // Use a simpler approach: decode with canvas Image.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Image } = require('canvas')
+    const img = new Image()
+    img.src = imageBuffer
+    const canvas = createCanvas(img.width, img.height)
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(img, 0, 0)
+    const canvasImageData = ctx.getImageData(0, 0, img.width, img.height)
+    // Convert to our ImageData polyfill
+    return new ImageData(
+      new Uint8ClampedArray(canvasImageData.data),
+      canvasImageData.width,
+      canvasImageData.height,
+    )
+  } catch {
+    return null
+  }
 }

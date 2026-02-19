@@ -1,0 +1,40 @@
+{
+  "description": "Exit — 2 kanji compound [small]",
+  "expectedText": [
+    "出口"
+  ],
+  "difficulty": "easy",
+  "synthetic": true,
+  "groundTruth": {
+    "lines": [
+      "出口"
+    ],
+    "segmentation": [
+      [
+        "出口"
+      ]
+    ],
+    "translations": [
+      {
+        "original": "出口",
+        "reading": "でぐち",
+        "translations": [
+          "exit",
+          "way out",
+          "outlet"
+        ],
+        "partOfSpeech": "n"
+      }
+    ]
+  },
+  "generationParams": {
+    "font": "Hiragino Sans",
+    "fontSize": 18,
+    "fg": "#000000",
+    "bg": "#ffffff",
+    "noise": 0,
+    "width": 54,
+    "height": 43,
+    "variant": "small"
+  }
+}

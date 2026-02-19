@@ -1,0 +1,39 @@
+{
+  "description": "Ramen — katakana [small]",
+  "expectedText": [
+    "ラーメン"
+  ],
+  "difficulty": "easy",
+  "synthetic": true,
+  "groundTruth": {
+    "lines": [
+      "ラーメン"
+    ],
+    "segmentation": [
+      [
+        "ラーメン"
+      ]
+    ],
+    "translations": [
+      {
+        "original": "ラーメン",
+        "reading": "",
+        "translations": [
+          "ramen",
+          "Chinese-style noodles"
+        ],
+        "partOfSpeech": "n"
+      }
+    ]
+  },
+  "generationParams": {
+    "font": "Hiragino Sans",
+    "fontSize": 18,
+    "fg": "#000000",
+    "bg": "#ffffff",
+    "noise": 0,
+    "width": 89,
+    "height": 43,
+    "variant": "small"
+  }
+}

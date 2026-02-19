@@ -1,0 +1,54 @@
+{
+  "description": "Multi-line menu — katakana + kanji [small]",
+  "expectedText": [
+    "ラーメン",
+    "餃子"
+  ],
+  "difficulty": "medium",
+  "synthetic": true,
+  "groundTruth": {
+    "lines": [
+      "ラーメン",
+      "餃子"
+    ],
+    "segmentation": [
+      [
+        "ラーメン"
+      ],
+      [
+        "餃子"
+      ]
+    ],
+    "translations": [
+      {
+        "original": "ラーメン",
+        "reading": "",
+        "translations": [
+          "ramen",
+          "Chinese-style noodles"
+        ],
+        "partOfSpeech": "n"
+      },
+      {
+        "original": "餃子",
+        "reading": "ギョーザ",
+        "translations": [
+          "gyoza",
+          "pot sticker",
+          "crescent-shaped pan-fried dumplings stuffed with minced pork and vegetables"
+        ],
+        "partOfSpeech": "n"
+      }
+    ]
+  },
+  "generationParams": {
+    "font": "Hiragino Sans",
+    "fontSize": 18,
+    "fg": "#000000",
+    "bg": "#ffffff",
+    "noise": 0,
+    "width": 89,
+    "height": 68,
+    "variant": "small"
+  }
+}

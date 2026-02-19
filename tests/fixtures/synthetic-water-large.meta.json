@@ -1,0 +1,36 @@
+{
+  "description": "Water — hiragana prefix + kanji [large]",
+  "expectedText": [
+    "お水"
+  ],
+  "difficulty": "easy",
+  "synthetic": true,
+  "groundTruth": {
+    "lines": [
+      "お水"
+    ],
+    "segmentation": [
+      [
+        "お水"
+      ]
+    ],
+    "translations": [
+      {
+        "original": "お水",
+        "reading": "",
+        "translations": [],
+        "partOfSpeech": ""
+      }
+    ]
+  },
+  "generationParams": {
+    "font": "Hiragino Sans",
+    "fontSize": 48,
+    "fg": "#000000",
+    "bg": "#ffffff",
+    "noise": 0,
+    "width": 144,
+    "height": 115,
+    "variant": "large"
+  }
+}
