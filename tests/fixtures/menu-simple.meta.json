@@ -1,0 +1,5 @@
+{
+  "description": "Simple printed restaurant menu with clear Japanese text",
+  "expectedText": ["ラーメン", "餃子"],
+  "difficulty": "easy"
+}

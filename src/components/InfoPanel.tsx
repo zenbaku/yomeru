@@ -6,11 +6,13 @@ interface InfoPanelProps {
   ocrText: string | null
   translations: TranslationResult[] | null
   error: string | null
+  ocrOnly: boolean
+  onOcrOnlyChange: (value: boolean) => void
   onSettings: () => void
   onReset: () => void
 }
 
-export function InfoPanel({ phase, ocrText, translations, error, onSettings, onReset }: InfoPanelProps) {
+export function InfoPanel({ phase, ocrText, translations, error, ocrOnly, onOcrOnlyChange, onSettings, onReset }: InfoPanelProps) {
   return (
     <div style={{
       flex: 1,
@@ -30,6 +32,19 @@ export function InfoPanel({ phase, ocrText, translations, error, onSettings, onR
       }}>
         <PhaseStatus phase={phase} />
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            onClick={() => onOcrOnlyChange(!ocrOnly)}
+            style={{
+              fontSize: 12,
+              color: ocrOnly ? 'var(--accent)' : 'var(--text-secondary)',
+              padding: '4px 10px',
+              background: ocrOnly ? 'rgba(233, 69, 96, 0.15)' : 'rgba(255,255,255,0.06)',
+              borderRadius: 6,
+              border: ocrOnly ? '1px solid rgba(233, 69, 96, 0.3)' : '1px solid transparent',
+            }}
+          >
+            OCR only
+          </button>
           {(phase === 'done' || phase === 'error') && (
             <button
               onClick={onReset}

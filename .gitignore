@@ -31,3 +31,9 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 .vercel
+
+# Test fixture images (keep .meta.json and .gitkeep)
+tests/fixtures/*.jpg
+tests/fixtures/*.jpeg
+tests/fixtures/*.png
+tests/fixtures/*.webp

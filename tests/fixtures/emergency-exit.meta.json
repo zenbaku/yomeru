@@ -1,0 +1,5 @@
+{
+  "description": "Emergency exit sign, glass/reflective",
+  "expectedText": ["非常口", "エレベーター"],
+  "difficulty": "medium"
+}

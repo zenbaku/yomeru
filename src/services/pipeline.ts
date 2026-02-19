@@ -31,11 +31,16 @@ export const INITIAL_STATE: PipelineState = {
   imageSize: null,
 }
 
+export interface PipelineOptions {
+  ocrOnly?: boolean
+}
+
 export type StateListener = (state: PipelineState) => void
 
 export async function runPipeline(
   frame: ImageData,
   onState: StateListener,
+  options?: PipelineOptions,
 ): Promise<void> {
   let state: PipelineState = {
     ...INITIAL_STATE,
@@ -66,7 +71,7 @@ export async function runPipeline(
     state = { ...state, ocrResult }
     onState(state)
 
-    if (ocrResult.fullText.length === 0) {
+    if (ocrResult.fullText.length === 0 || options?.ocrOnly) {
       state = { ...state, phase: 'done', translations: [] }
       onState(state)
       return
