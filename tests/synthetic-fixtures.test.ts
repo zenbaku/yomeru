@@ -127,7 +127,7 @@ describe('synthetic fixtures', () => {
 
         // Build mock OCRLines from ground truth text (one per line)
         const mockLines: OCRLine[] = gt.lines.map((text, i) =>
-          makeLine(text, 95, {
+          makeLine(text, 0.95, {
             x: 10,
             y: 10 + i * 40,
             width: 200,

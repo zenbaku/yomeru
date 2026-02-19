@@ -58,7 +58,7 @@ export const tesseractJpn: OCRModel = {
       block.paragraphs.flatMap((para) =>
         para.lines.map((line) => ({
           text: line.text.trim(),
-          confidence: line.confidence,
+          confidence: line.confidence / 100, // Normalize from 0-100 to 0-1
           bbox: {
             x: line.bbox.x0,
             y: line.bbox.y0,
@@ -75,7 +75,7 @@ export const tesseractJpn: OCRModel = {
     if (lines.length === 0 && fullText.length > 0) {
       lines.push({
         text: fullText,
-        confidence: page.confidence,
+        confidence: page.confidence / 100, // Normalize from 0-100 to 0-1
         bbox: { x: 0, y: 0, width: image.width, height: image.height },
       })
     }

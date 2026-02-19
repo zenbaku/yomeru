@@ -155,49 +155,49 @@ describe('ocr filters', () => {
   describe('filterByConfidence', () => {
     it('should remove lines below threshold', () => {
       const lines = [
-        makeLine('高い', 90),
-        makeLine('低い', 40),
-        makeLine('中', 60),
+        makeLine('高い', 0.9),
+        makeLine('低い', 0.4),
+        makeLine('中', 0.6),
       ]
-      const result = filterByConfidence(lines, 60)
+      const result = filterByConfidence(lines, 0.6)
       expect(result).toHaveLength(2)
       expect(result.map((l) => l.text)).toEqual(['高い', '中'])
     })
 
     it('should include lines exactly at threshold', () => {
-      const lines = [makeLine('ちょうど', 60)]
-      expect(filterByConfidence(lines, 60)).toHaveLength(1)
+      const lines = [makeLine('ちょうど', 0.6)]
+      expect(filterByConfidence(lines, 0.6)).toHaveLength(1)
     })
   })
 
   describe('filterByContent', () => {
     it('should keep lines with kanji', () => {
-      const lines = [makeLine('漢字', 90)]
+      const lines = [makeLine('漢字', 0.9)]
       expect(filterByContent(lines)).toHaveLength(1)
     })
 
     it('should keep lines with 2+ kana', () => {
-      const lines = [makeLine('かな', 90)]
+      const lines = [makeLine('かな', 0.9)]
       expect(filterByContent(lines)).toHaveLength(1)
     })
 
     it('should reject pure ASCII', () => {
-      const lines = [makeLine('hello', 90)]
+      const lines = [makeLine('hello', 0.9)]
       expect(filterByContent(lines)).toHaveLength(0)
     })
 
     it('should reject pure punctuation', () => {
-      const lines = [makeLine('...!!!', 90)]
+      const lines = [makeLine('...!!!', 0.9)]
       expect(filterByContent(lines)).toHaveLength(0)
     })
 
     it('should reject single kana', () => {
-      const lines = [makeLine('あ', 90)]
+      const lines = [makeLine('あ', 0.9)]
       expect(filterByContent(lines)).toHaveLength(0)
     })
 
     it('should reject empty strings', () => {
-      const lines = [makeLine('', 90)]
+      const lines = [makeLine('', 0.9)]
       expect(filterByContent(lines)).toHaveLength(0)
     })
   })
@@ -205,21 +205,21 @@ describe('ocr filters', () => {
   describe('filterBySize', () => {
     it('should reject tiny bounding boxes', () => {
       const lines = [
-        makeLine('小さい', 90, { x: 0, y: 0, width: 5, height: 5 }),
+        makeLine('小さい', 0.9, { x: 0, y: 0, width: 5, height: 5 }),
       ]
       expect(filterBySize(lines)).toHaveLength(0)
     })
 
     it('should accept normal-sized bounding boxes', () => {
       const lines = [
-        makeLine('普通', 90, { x: 0, y: 0, width: 100, height: 30 }),
+        makeLine('普通', 0.9, { x: 0, y: 0, width: 100, height: 30 }),
       ]
       expect(filterBySize(lines)).toHaveLength(1)
     })
 
     it('should reject extreme aspect ratios', () => {
       const lines = [
-        makeLine('細い', 90, { x: 0, y: 0, width: 1000, height: 1 }),
+        makeLine('細い', 0.9, { x: 0, y: 0, width: 1000, height: 1 }),
       ]
       expect(filterBySize(lines)).toHaveLength(0)
     })
@@ -228,16 +228,16 @@ describe('ocr filters', () => {
   describe('filterOverlapping', () => {
     it('should keep non-overlapping lines', () => {
       const lines = [
-        makeLine('一', 90, { x: 0, y: 0, width: 50, height: 30 }),
-        makeLine('二', 85, { x: 100, y: 0, width: 50, height: 30 }),
+        makeLine('一', 0.9, { x: 0, y: 0, width: 50, height: 30 }),
+        makeLine('二', 0.85, { x: 100, y: 0, width: 50, height: 30 }),
       ]
       expect(filterOverlapping(lines)).toHaveLength(2)
     })
 
     it('should remove dominated overlapping lines', () => {
       const lines = [
-        makeLine('強い', 90, { x: 0, y: 0, width: 100, height: 30 }),
-        makeLine('弱い', 70, { x: 5, y: 2, width: 90, height: 26 }),
+        makeLine('強い', 0.9, { x: 0, y: 0, width: 100, height: 30 }),
+        makeLine('弱い', 0.7, { x: 5, y: 2, width: 90, height: 26 }),
       ]
       const result = filterOverlapping(lines)
       expect(result).toHaveLength(1)
@@ -248,8 +248,8 @@ describe('ocr filters', () => {
   describe('mergeAdjacentLines', () => {
     it('should merge vertically adjacent lines with horizontal overlap', () => {
       const lines = [
-        makeLine('上', 90, { x: 10, y: 10, width: 100, height: 20 }),
-        makeLine('下', 85, { x: 10, y: 32, width: 100, height: 20 }),
+        makeLine('上', 0.9, { x: 10, y: 10, width: 100, height: 20 }),
+        makeLine('下', 0.85, { x: 10, y: 32, width: 100, height: 20 }),
       ]
       const result = mergeAdjacentLines(lines)
       expect(result).toHaveLength(1)
@@ -258,8 +258,8 @@ describe('ocr filters', () => {
 
     it('should not merge distant lines', () => {
       const lines = [
-        makeLine('遠い一', 90, { x: 10, y: 10, width: 100, height: 20 }),
-        makeLine('遠い二', 85, { x: 10, y: 200, width: 100, height: 20 }),
+        makeLine('遠い一', 0.9, { x: 10, y: 10, width: 100, height: 20 }),
+        makeLine('遠い二', 0.85, { x: 10, y: 200, width: 100, height: 20 }),
       ]
       expect(mergeAdjacentLines(lines)).toHaveLength(2)
     })
@@ -268,7 +268,7 @@ describe('ocr filters', () => {
   describe('stripNonJapanese', () => {
     it('should strip English characters from mixed text', () => {
       const lines = [
-        makeLine('Exit 非常口 Emergency', 90),
+        makeLine('Exit 非常口 Emergency', 0.9),
       ]
       const result = stripNonJapanese(lines)
       expect(result).toHaveLength(1)
@@ -276,25 +276,25 @@ describe('ocr filters', () => {
     })
 
     it('should keep pure Japanese text unchanged', () => {
-      const lines = [makeLine('日本語テスト', 90)]
+      const lines = [makeLine('日本語テスト', 0.9)]
       const result = stripNonJapanese(lines)
       expect(result[0].text).toBe('日本語テスト')
     })
 
     it('should drop lines that become empty after stripping', () => {
-      const lines = [makeLine('Hello World', 90)]
+      const lines = [makeLine('Hello World', 0.9)]
       const result = stripNonJapanese(lines)
       expect(result).toHaveLength(0)
     })
 
     it('should keep katakana and hiragana', () => {
-      const lines = [makeLine('カタカナ ひらがな ABC', 90)]
+      const lines = [makeLine('カタカナ ひらがな ABC', 0.9)]
       const result = stripNonJapanese(lines)
       expect(result[0].text).toBe('カタカナひらがな')
     })
 
     it('should keep CJK punctuation', () => {
-      const lines = [makeLine('「日本語」。', 90)]
+      const lines = [makeLine('「日本語」。', 0.9)]
       const result = stripNonJapanese(lines)
       expect(result[0].text).toBe('「日本語」。')
     })
@@ -303,10 +303,10 @@ describe('ocr filters', () => {
   describe('filterOCRLines (combined pipeline)', () => {
     it('should apply all filters in sequence', () => {
       const lines: OCRLine[] = [
-        makeLine('日本語テスト', 90, { x: 0, y: 0, width: 200, height: 30 }),
-        makeLine('noise', 30, { x: 0, y: 50, width: 200, height: 30 }),
-        makeLine('...', 90, { x: 0, y: 100, width: 200, height: 30 }),
-        makeLine('小', 90, { x: 0, y: 150, width: 3, height: 3 }),
+        makeLine('日本語テスト', 0.9, { x: 0, y: 0, width: 200, height: 30 }),
+        makeLine('noise', 0.3, { x: 0, y: 50, width: 200, height: 30 }),
+        makeLine('...', 0.9, { x: 0, y: 100, width: 200, height: 30 }),
+        makeLine('小', 0.9, { x: 0, y: 150, width: 3, height: 3 }),
       ]
       const result = filterOCRLines(lines)
       expect(result).toHaveLength(1)
@@ -357,9 +357,9 @@ describe('preprocessing presets', () => {
       }
       // Block size must be odd
       expect(preset.adaptiveBlockSize % 2).toBe(1)
-      // Confidence in valid range
+      // Confidence in valid range (0-1 scale)
       expect(preset.minConfidence).toBeGreaterThanOrEqual(0)
-      expect(preset.minConfidence).toBeLessThanOrEqual(100)
+      expect(preset.minConfidence).toBeLessThanOrEqual(1)
       // Area must be positive
       expect(preset.minRegionArea).toBeGreaterThan(0)
 

@@ -35,7 +35,7 @@ export const PRESETS: Record<string, PipelineParams> = {
     median: false,       // auto will enable if noisy
     morphOpen: false,    // auto will enable if needed
     upscale: 1,          // auto will increase if small
-    minConfidence: 40,   // moderate — auto handles varied inputs
+    minConfidence: 0.4,  // moderate — auto handles varied inputs
     minRegionArea: 200,
     maxAspectRatio: 30,
     requireJapanese: true,
@@ -49,7 +49,7 @@ export const PRESETS: Record<string, PipelineParams> = {
     median: false,
     morphOpen: false,
     upscale: 1,
-    minConfidence: 60,
+    minConfidence: 0.6,
     minRegionArea: 300,
     maxAspectRatio: 30,
     requireJapanese: true,
@@ -64,7 +64,7 @@ export const PRESETS: Record<string, PipelineParams> = {
     median: true,            // median filter removes impulse noise
     morphOpen: true,         // despeckle removes remaining dots after threshold
     upscale: 2,              // upscale small images for better OCR
-    minConfidence: 5,        // very low — let content filter (requireJapanese) do the work
+    minConfidence: 0.05,     // very low — let content filter (requireJapanese) do the work
     minRegionArea: 100,      // lower for small/noisy images
     maxAspectRatio: 30,
     requireJapanese: true,
@@ -79,7 +79,7 @@ export const PRESETS: Record<string, PipelineParams> = {
     median: false,
     morphOpen: false,
     upscale: 1,
-    minConfidence: 50,      // lower threshold since these are harder
+    minConfidence: 0.5,     // lower threshold since these are harder
     minRegionArea: 500,
     maxAspectRatio: 30,
     requireJapanese: true,
@@ -94,7 +94,7 @@ export const PRESETS: Record<string, PipelineParams> = {
     median: false,
     morphOpen: false,
     upscale: 1,
-    minConfidence: 70,
+    minConfidence: 0.7,
     minRegionArea: 200,
     maxAspectRatio: 30,
     requireJapanese: true,
@@ -109,7 +109,7 @@ export const PRESETS: Record<string, PipelineParams> = {
     median: false,
     morphOpen: false,
     upscale: 1,
-    minConfidence: 45,
+    minConfidence: 0.45,
     minRegionArea: 400,
     maxAspectRatio: 30,
     requireJapanese: true,

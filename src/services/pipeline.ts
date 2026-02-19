@@ -54,14 +54,18 @@ export async function runPipeline(
   onState(state)
 
   try {
-    // Preprocessing phase
-    const processed = preprocessFrame(frame)
+    const ocrModel = getDefaultOCRModel()
+
+    // Preprocessing phase — skip for PaddleOCR (its detection model handles scene text natively)
+    let processed = frame
+    if (ocrModel.id === 'tesseract-jpn') {
+      processed = preprocessFrame(frame)
+    }
 
     // OCR phase
     state = { ...state, phase: 'ocr' }
     onState(state)
 
-    const ocrModel = getDefaultOCRModel()
     await ocrModel.initialize()
     const rawResult = await ocrModel.recognize(processed)
 

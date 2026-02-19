@@ -1,9 +1,49 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
-import { resolve } from 'node:path'
+import { resolve, basename } from 'node:path'
 import { existsSync, readdirSync, statSync, createReadStream } from 'node:fs'
 
 const fixturesDir = resolve(__dirname, '../fixtures')
+
+/**
+ * Serve ONNX Runtime WASM & module files from node_modules during development.
+ * See the main vite.config.ts for full explanation.
+ */
+function serveOnnxWasm(): Plugin {
+  const wasmDir = resolve(
+    __dirname,
+    '../../node_modules/@gutenye/ocr-browser/node_modules/onnxruntime-web/dist',
+  )
+
+  const contentTypes: Record<string, string> = {
+    '.wasm': 'application/wasm',
+    '.mjs': 'application/javascript',
+  }
+
+  return {
+    name: 'serve-onnx-wasm',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url ?? ''
+        if (url.includes('ort-wasm') && (url.endsWith('.wasm') || url.endsWith('.mjs'))) {
+          const filename = basename(url.split('?')[0])
+          const filePath = resolve(wasmDir, filename)
+          if (existsSync(filePath)) {
+            const stat = statSync(filePath)
+            const ext = filename.substring(filename.lastIndexOf('.'))
+            res.writeHead(200, {
+              'Content-Type': contentTypes[ext] ?? 'application/octet-stream',
+              'Content-Length': stat.size,
+            })
+            createReadStream(filePath).pipe(res)
+            return
+          }
+        }
+        next()
+      })
+    },
+  }
+}
 
 /**
  * Vite plugin that serves test fixture files at `/fixtures/` and
@@ -59,7 +99,7 @@ function serveFixtures(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), serveFixtures()],
+  plugins: [serveOnnxWasm(), react(), serveFixtures()],
   root: resolve(__dirname),
   publicDir: resolve(__dirname, '../../public'),
   resolve: {
@@ -70,5 +110,10 @@ export default defineConfig({
   server: {
     port: 5174,
     host: true,
+    headers: {
+      // Required for SharedArrayBuffer (multi-threaded ONNX Runtime WASM)
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
   },
 })

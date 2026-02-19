@@ -71,7 +71,7 @@ export function Onboarding({ onReady }: OnboardingProps) {
         setProgress(loaded / total * 0.3)
       })
 
-      // Step 2: Initialize Tesseract / downloads WASM + trained data (30-55%)
+      // Step 2: Download + initialize OCR model (30-55%)
       setStatusText('Downloading OCR model...')
       await getDefaultOCRModel().initialize((p) => {
         setProgress(0.3 + p * 0.25)

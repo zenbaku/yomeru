@@ -94,8 +94,8 @@ export function ParameterPanel({ params, onChange, presets }: Props) {
             label="Min confidence"
             value={params.minConfidence}
             min={0}
-            max={100}
-            step={1}
+            max={1}
+            step={0.05}
             onChange={(v) => update({ minConfidence: v })}
           />
           <Slider

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { preprocessFrame, analyzeImage } from '@/services/preprocessing.ts'
 import type { PreprocessOptions, ImageAnalysis } from '@/services/preprocessing.ts'
-import { getDefaultOCRModel } from '@/services/ocr/registry.ts'
+import { ocrModels, getOCRModel, getDefaultOCRModel } from '@/services/ocr/registry.ts'
 import { getDefaultTranslationModel } from '@/services/translation/registry.ts'
 import {
   filterByConfidence,
@@ -104,6 +104,7 @@ export function Inspector() {
   const [fixtureGroups, setFixtureGroups] = useState<FixtureGroup[]>([])
   const [dragging, setDragging] = useState(false)
   const [analysis, setAnalysis] = useState<ImageAnalysis | null>(null)
+  const [selectedModelId, setSelectedModelId] = useState(getDefaultOCRModel().id)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const runIdRef = useRef(0)
   const dragCountRef = useRef(0)
@@ -234,35 +235,39 @@ export function Inspector() {
   // ---------------------------------------------------------------------------
 
   const runPipeline = useCallback(
-    async (img: ImageData, p: PipelineParams) => {
+    async (img: ImageData, p: PipelineParams, modelId: string) => {
       const runId = ++runIdRef.current
       setRunning(true)
       setStatus('Running pipeline...')
+      setOutput(EMPTY_OUTPUT) // Clear stale results from previous run
 
       const timings: StageTimings = { preprocessing: 0, ocr: 0, filtering: 0, translation: 0 }
+      const ocrModel = getOCRModel(modelId) ?? getDefaultOCRModel()
 
       try {
-        // Stage 1: Preprocessing
-        setStatus('Preprocessing...')
-        const t0 = performance.now()
-        const preprocessOpts: PreprocessOptions = {
-          auto: p.auto,
-          adaptiveBlockSize: p.adaptiveBlockSize,
-          adaptiveC: p.adaptiveC,
-          blur: p.blur,
-          median: p.median,
-          morphOpen: p.morphOpen,
-          upscale: p.upscale,
+        // Stage 1: Preprocessing (skip for PaddleOCR — its detector handles scene text natively)
+        let preprocessed: ImageData = img
+        if (ocrModel.id === 'tesseract-jpn') {
+          setStatus('Preprocessing...')
+          const t0 = performance.now()
+          const preprocessOpts: PreprocessOptions = {
+            auto: p.auto,
+            adaptiveBlockSize: p.adaptiveBlockSize,
+            adaptiveC: p.adaptiveC,
+            blur: p.blur,
+            median: p.median,
+            morphOpen: p.morphOpen,
+            upscale: p.upscale,
+          }
+          preprocessed = preprocessFrame(img, preprocessOpts)
+          timings.preprocessing = performance.now() - t0
         }
-        const preprocessed = preprocessFrame(img, preprocessOpts)
-        timings.preprocessing = performance.now() - t0
 
         if (runId !== runIdRef.current) return
 
         // Stage 2: OCR
-        setStatus('Running OCR...')
+        setStatus(`Running OCR (${ocrModel.name})...`)
         const t1 = performance.now()
-        const ocrModel = getDefaultOCRModel()
         await ocrModel.initialize()
         const rawOCR = await ocrModel.recognize(preprocessed)
         timings.ocr = performance.now() - t1
@@ -320,17 +325,27 @@ export function Inspector() {
       if (!imageData) return
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
-        runPipeline(imageData, newParams)
+        runPipeline(imageData, newParams, selectedModelId)
       }, 300)
     },
-    [imageData, runPipeline],
+    [imageData, runPipeline, selectedModelId],
+  )
+
+  // Re-run when model changes
+  const handleModelChange = useCallback(
+    (modelId: string) => {
+      setSelectedModelId(modelId)
+      if (!imageData) return
+      runPipeline(imageData, params, modelId)
+    },
+    [imageData, params, runPipeline],
   )
 
   // Run analysis + pipeline when image changes
   useEffect(() => {
     if (imageData) {
       setAnalysis(analyzeImage(imageData))
-      runPipeline(imageData, params)
+      runPipeline(imageData, params, selectedModelId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageData])
@@ -392,6 +407,18 @@ export function Inspector() {
 
         <CameraCapture onCapture={handleCameraCapture} />
 
+        <select
+          value={selectedModelId}
+          onChange={(e) => handleModelChange(e.target.value)}
+          style={selectStyle}
+        >
+          {ocrModels.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+
         <span style={{ color: '#a0a0b0', fontSize: 13 }}>
           {running ? '...' : status}
         </span>
@@ -432,7 +459,9 @@ export function Inspector() {
 
         {/* Panel 2: Preprocessed */}
         <StagePanel title="Preprocessed" timing={output.timings.preprocessing}>
-          {output.preprocessed ? (
+          {selectedModelId !== 'tesseract-jpn' && output.rawOCR ? (
+            <Placeholder text="Skipped (PaddleOCR uses raw image)" />
+          ) : output.preprocessed ? (
             <PreprocessedCanvas imageData={output.preprocessed} />
           ) : (
             <Placeholder text="Waiting..." />
@@ -499,8 +528,8 @@ export function Inspector() {
           {output.rawOCR.lines.length > 0 && (
             <span>
               Confidence range:{' '}
-              {Math.min(...output.rawOCR.lines.map((l) => l.confidence)).toFixed(0)}-
-              {Math.max(...output.rawOCR.lines.map((l) => l.confidence)).toFixed(0)}
+              {(Math.min(...output.rawOCR.lines.map((l) => l.confidence)) * 100).toFixed(0)}%-
+              {(Math.max(...output.rawOCR.lines.map((l) => l.confidence)) * 100).toFixed(0)}%
             </span>
           )}
         </div>
@@ -588,10 +617,10 @@ function BBoxOverlay({
       const isFiltered = filteredTexts.has(line.text)
       const conf = line.confidence
 
-      // Color by confidence
+      // Color by confidence (0-1 scale)
       let color: string
-      if (conf >= 80) color = '#4cd964'
-      else if (conf >= 60) color = '#f5a623'
+      if (conf >= 0.8) color = '#4cd964'
+      else if (conf >= 0.6) color = '#f5a623'
       else color = '#e94560'
 
       const { x, y, width, height } = line.bbox
@@ -606,8 +635,8 @@ function BBoxOverlay({
       ctx.strokeRect(x, y, width, height)
       ctx.setLineDash([])
 
-      // Confidence label
-      const label = `${conf.toFixed(0)}%`
+      // Confidence label (convert 0-1 to percentage)
+      const label = `${(conf * 100).toFixed(0)}%`
       ctx.font = `${Math.max(12, height * 0.3)}px sans-serif`
       ctx.fillStyle = color
       const metrics = ctx.measureText(label)

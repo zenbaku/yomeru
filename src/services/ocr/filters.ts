@@ -2,7 +2,7 @@ import type { OCRLine } from './types.ts'
 
 // --- Configurable thresholds ---
 
-export const OCR_CONFIDENCE_THRESHOLD = 60
+export const OCR_CONFIDENCE_THRESHOLD = 0.6
 
 export const MIN_BBOX_WIDTH = 20
 export const MIN_BBOX_HEIGHT = 10

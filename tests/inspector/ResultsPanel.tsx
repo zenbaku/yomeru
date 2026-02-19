@@ -16,7 +16,7 @@ export function ResultsPanel({ filteredLines, translations }: Props) {
           <div key={i} style={lineStyle}>
             <span style={{ color: '#e8e8e8' }}>{line.text}</span>
             <span style={{ color: '#a0a0b0', marginLeft: 8 }}>
-              ({line.confidence.toFixed(0)}%)
+              ({(line.confidence * 100).toFixed(0)}%)
             </span>
           </div>
         ))}

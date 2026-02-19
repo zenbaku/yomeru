@@ -6,25 +6,26 @@ export async function downloadWithProgress(
   url: string,
   cacheName: string,
   onProgress?: (loaded: number, total: number) => void,
-): Promise<Response> {
+): Promise<void> {
   const cache = await caches.open(cacheName)
 
   // Check if already cached
   const cached = await cache.match(url)
-  if (cached) return cached
+  if (cached) return
 
   const response = await fetch(url)
   if (!response.ok) throw new Error(`Failed to fetch ${url}: ${response.status}`)
 
   const contentLength = Number(response.headers.get('content-length') ?? 0)
-  const reader = response.body?.getReader()
 
-  if (!reader || !contentLength) {
-    // No streaming support — just cache directly
-    const clone = response.clone()
-    await cache.put(url, clone)
-    return response
+  if (!contentLength || !response.body) {
+    // No content-length or no readable stream — cache directly without progress
+    await cache.put(url, response)
+    return
   }
+
+  // Only acquire the reader AFTER deciding we need streaming (locks the body)
+  const reader = response.body.getReader()
 
   const chunks: Uint8Array[] = []
   let loaded = 0
@@ -39,13 +40,11 @@ export async function downloadWithProgress(
 
   // Reconstruct the response and cache it
   const blob = new Blob(chunks as BlobPart[])
-  const cachedResponse = new Response(blob, {
+  await cache.put(url, new Response(blob, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
-  })
-  await cache.put(url, cachedResponse.clone())
-  return cachedResponse
+  }))
 }
 
 export async function isCached(url: string, cacheName: string): Promise<boolean> {

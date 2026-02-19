@@ -32,6 +32,9 @@ pnpm-debug.log*
 Thumbs.db
 .vercel
 
+# ONNX Runtime WASM files (copied from node_modules during setup)
+public/ort-wasm/
+
 # Test fixture images (keep .meta.json and .gitkeep)
 tests/fixtures/*.jpg
 tests/fixtures/*.jpeg
