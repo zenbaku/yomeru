@@ -9,6 +9,9 @@ export function usePipeline() {
     if (runningRef.current) return
     runningRef.current = true
 
+    // Clear previous results immediately
+    setState({ ...INITIAL_STATE, phase: 'preprocessing', imageSize: { width: frame.width, height: frame.height } })
+
     await runPipeline(frame, (newState) => {
       setState(newState)
     })

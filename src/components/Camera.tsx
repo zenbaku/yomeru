@@ -1,16 +1,16 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useCamera } from '../hooks/useCamera.ts'
-import type { PipelinePhase } from '../services/pipeline.ts'
-import { PhaseIndicator } from './PhaseIndicator.tsx'
+import { preprocessFrame } from '../services/preprocessing.ts'
 
 interface CameraProps {
-  phase: PipelinePhase
   onCapture: (frame: ImageData) => void
   scanning: boolean
 }
 
-export function Camera({ phase, onCapture, scanning }: CameraProps) {
+export function Camera({ onCapture, scanning }: CameraProps) {
   const { videoRef, status, start, captureFrame } = useCamera()
+  const [debugPreview, setDebugPreview] = useState(false)
+  const debugCanvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     start()
@@ -21,6 +21,25 @@ export function Camera({ phase, onCapture, scanning }: CameraProps) {
     const frame = captureFrame()
     if (frame) onCapture(frame)
   }
+
+  const toggleDebug = useCallback(() => {
+    if (debugPreview) {
+      setDebugPreview(false)
+      return
+    }
+    const frame = captureFrame()
+    if (!frame) return
+
+    const processed = preprocessFrame(frame)
+    const canvas = debugCanvasRef.current
+    if (!canvas) return
+
+    canvas.width = processed.width
+    canvas.height = processed.height
+    const ctx = canvas.getContext('2d')!
+    ctx.putImageData(processed, 0, 0)
+    setDebugPreview(true)
+  }, [debugPreview, captureFrame])
 
   if (status === 'denied') {
     return (
@@ -57,21 +76,51 @@ export function Camera({ phase, onCapture, scanning }: CameraProps) {
         }}
       />
 
-      {/* Phase indicator - top center */}
-      <div style={{
-        position: 'absolute',
-        top: 'calc(env(safe-area-inset-top, 0px) + 12px)',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 10,
-      }}>
-        <PhaseIndicator phase={phase} />
-      </div>
+      {/* Debug preview overlay */}
+      <canvas
+        ref={debugCanvasRef}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          pointerEvents: 'none',
+          display: debugPreview ? 'block' : 'none',
+        }}
+      />
+
+      {/* Debug toggle - top left */}
+      <button
+        onClick={toggleDebug}
+        style={{
+          position: 'absolute',
+          top: 8,
+          left: 8,
+          zIndex: 10,
+          width: 28,
+          height: 28,
+          borderRadius: 6,
+          background: debugPreview ? 'rgba(245, 166, 35, 0.8)' : 'rgba(255,255,255,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 12,
+          color: '#fff',
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      </button>
 
       {/* Scan button - bottom center */}
       <div style={{
         position: 'absolute',
-        bottom: 'calc(var(--safe-bottom) + 24px)',
+        bottom: 16,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 10,

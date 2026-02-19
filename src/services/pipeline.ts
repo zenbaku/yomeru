@@ -2,10 +2,12 @@ import type { OCRResult } from './ocr/types.ts'
 import type { TranslationResult } from './translation/types.ts'
 import { getDefaultOCRModel } from './ocr/registry.ts'
 import { getDefaultTranslationModel } from './translation/registry.ts'
+import { filterOCRLines } from './ocr/filters.ts'
+import { preprocessFrame } from './preprocessing.ts'
 
 export type PipelinePhase =
   | 'idle'
-  | 'capturing'
+  | 'preprocessing'
   | 'ocr'
   | 'segmenting'
   | 'translating'
@@ -37,26 +39,34 @@ export async function runPipeline(
 ): Promise<void> {
   let state: PipelineState = {
     ...INITIAL_STATE,
-    phase: 'capturing',
+    phase: 'preprocessing',
     imageSize: { width: frame.width, height: frame.height },
   }
   onState(state)
 
   try {
+    // Preprocessing phase
+    const processed = preprocessFrame(frame)
+
     // OCR phase
     state = { ...state, phase: 'ocr' }
     onState(state)
 
     const ocrModel = getDefaultOCRModel()
     await ocrModel.initialize()
-    const ocrResult = await ocrModel.recognize(frame)
+    const rawResult = await ocrModel.recognize(processed)
+
+    // Filter OCR lines (confidence, content, size, overlap, merge)
+    const filteredLines = filterOCRLines(rawResult.lines)
+    const ocrResult: OCRResult = {
+      lines: filteredLines,
+      fullText: filteredLines.map((l) => l.text).join(''),
+    }
 
     state = { ...state, ocrResult }
     onState(state)
 
-    const fullText = ocrResult.fullText || ocrResult.lines.map((l) => l.text).join('')
-
-    if (fullText.length === 0) {
+    if (ocrResult.fullText.length === 0) {
       state = { ...state, phase: 'done', translations: [] }
       onState(state)
       return
@@ -72,7 +82,7 @@ export async function runPipeline(
     state = { ...state, phase: 'translating' }
     onState(state)
 
-    const translations = await translationModel.translate(fullText)
+    const translations = await translationModel.translate(ocrResult.fullText)
 
     state = { ...state, phase: 'done', translations }
     onState(state)

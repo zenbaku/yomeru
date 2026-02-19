@@ -26,7 +26,9 @@ export function TextOverlay({ ocrResult, imageSize, translated }: TextOverlayPro
     const scaleX = rect.width / imageSize.width
     const scaleY = rect.height / imageSize.height
 
-    const borderColor = translated ? '#4cd964' : '#f5a623'
+    const borderColor = translated
+      ? 'rgba(76, 217, 100, 0.6)'  // green, semi-transparent when done
+      : 'rgba(245, 166, 35, 0.7)'  // orange/amber while processing
 
     for (const line of ocrResult.lines) {
       const { x, y, width, height } = line.bbox
@@ -35,21 +37,21 @@ export function TextOverlay({ ocrResult, imageSize, translated }: TextOverlayPro
       const sw = width * scaleX
       const sh = height * scaleY
 
-      // Semi-transparent background
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+      // Subtle dark background
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'
       ctx.fillRect(sx, sy, sw, sh)
 
-      // Border
+      // Thin border
       ctx.strokeStyle = borderColor
-      ctx.lineWidth = 2
+      ctx.lineWidth = 1.5
       ctx.strokeRect(sx, sy, sw, sh)
 
-      // Text
-      const fontSize = Math.max(10, Math.min(sh * 0.7, 16))
+      // Small Japanese text label
+      const fontSize = Math.max(9, Math.min(sh * 0.55, 14))
       ctx.font = `${fontSize}px -apple-system, sans-serif`
-      ctx.fillStyle = '#fff'
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
       ctx.textBaseline = 'middle'
-      ctx.fillText(line.text, sx + 4, sy + sh / 2, sw - 8)
+      ctx.fillText(line.text, sx + 3, sy + sh / 2, sw - 6)
     }
   }, [ocrResult, imageSize, translated])
 
