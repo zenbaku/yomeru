@@ -91,16 +91,20 @@ export async function translatePhrase(text: string): Promise<string | null> {
 export async function translatePhrases(lines: string[]): Promise<string[] | null> {
   if (lines.length === 0) return null
 
-  // Ensure model is loaded once before processing all lines
-  await initializePhraseModel()
-  if (!translator) return null
+  try {
+    // Ensure model is loaded once before processing all lines
+    await initializePhraseModel()
+    if (!translator) return null
 
-  const results: string[] = []
-  for (const line of lines) {
-    const t = await translatePhrase(line)
-    if (t) results.push(t)
+    const results: string[] = []
+    for (const line of lines) {
+      const t = await translatePhrase(line)
+      if (t) results.push(t)
+    }
+    return results.length > 0 ? results : null
+  } catch {
+    return null
   }
-  return results.length > 0 ? results : null
 }
 
 /**
