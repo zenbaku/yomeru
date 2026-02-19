@@ -26,6 +26,24 @@ registerRoute(
   }),
 )
 
+// Cache HuggingFace model files (ONNX weights, tokenizer, config)
+registerRoute(
+  ({ url }) =>
+    url.hostname.includes('huggingface.co') || url.hostname.includes('hf.co'),
+  new CacheFirst({
+    cacheName: 'hf-models',
+  }),
+)
+
+// Cache ONNX WASM runtime (large, excluded from precache)
+registerRoute(
+  ({ url, sameOrigin }) =>
+    sameOrigin && url.pathname.endsWith('.wasm'),
+  new CacheFirst({
+    cacheName: 'wasm-runtime',
+  }),
+)
+
 // Cache other same-origin assets
 registerRoute(
   ({ request, sameOrigin }) =>
