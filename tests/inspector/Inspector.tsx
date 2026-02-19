@@ -3,7 +3,8 @@ import { preprocessFrame, analyzeImage } from '@/services/preprocessing.ts'
 import type { PreprocessOptions, ImageAnalysis } from '@/services/preprocessing.ts'
 import { ocrModels, getOCRModel, getDefaultOCRModel } from '@/services/ocr/registry.ts'
 import { getDefaultTranslationModel } from '@/services/translation/registry.ts'
-import { translatePhrases } from '@/services/translation/phrase.ts'
+import { neuralModels, getNeuralModel, getSelectedNeuralModelId } from '@/services/translation/neural-registry.ts'
+import type { NeuralModelConfig, NeuralModelInfo } from '@/services/translation/types.ts'
 import {
   filterByConfidence,
   filterByContent,
@@ -24,14 +25,20 @@ interface StageTimings {
   ocr: number
   filtering: number
   translation: number
+  neural: number
 }
+
+type NeuralStatus = 'idle' | 'loading' | 'translating' | 'done' | 'error' | 'not-downloaded' | 'no-model'
 
 interface PipelineOutput {
   preprocessed: ImageData | null
   rawOCR: OCRResult | null
   filteredLines: OCRLine[]
   translations: TranslationResult[]
-  phraseTranslations: string[] | null
+  neuralTranslations: Map<number, string>
+  neuralStatus: NeuralStatus
+  neuralProgress: number // 0-100
+  neuralError: string | null
   timings: StageTimings
 }
 
@@ -40,8 +47,11 @@ const EMPTY_OUTPUT: PipelineOutput = {
   rawOCR: null,
   filteredLines: [],
   translations: [],
-  phraseTranslations: null,
-  timings: { preprocessing: 0, ocr: 0, filtering: 0, translation: 0 },
+  neuralTranslations: new Map(),
+  neuralStatus: 'idle',
+  neuralProgress: 0,
+  neuralError: null,
+  timings: { preprocessing: 0, ocr: 0, filtering: 0, translation: 0, neural: 0 },
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +104,162 @@ function groupFixtures(names: string[]): FixtureGroup[] {
 }
 
 // ---------------------------------------------------------------------------
+// NeuralModelBar — inline mini model manager
+// ---------------------------------------------------------------------------
+
+function NeuralModelBar({
+  selectedId,
+  onSelect,
+  onDownloadComplete,
+}: {
+  selectedId: string
+  onSelect: (id: string) => void
+  onDownloadComplete: () => void
+}) {
+  return (
+    <div style={neuralBarStyle}>
+      <span style={{ fontSize: 12, color: '#a0a0b0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        Neural:
+      </span>
+      {neuralModels.map((m) => (
+        <NeuralModelChip
+          key={m.id}
+          model={m}
+          isSelected={m.id === selectedId}
+          onSelect={() => onSelect(m.id)}
+          onDownloadComplete={onDownloadComplete}
+        />
+      ))}
+      <button
+        onClick={() => onSelect('')}
+        style={{
+          ...chipStyle,
+          background: selectedId === '' ? '#0f3460' : 'transparent',
+          border: selectedId === '' ? '1px solid #4dabf7' : '1px solid #0f3460',
+          color: selectedId === '' ? '#4dabf7' : '#a0a0b0',
+        }}
+      >
+        None
+      </button>
+    </div>
+  )
+}
+
+function NeuralModelChip({
+  model,
+  isSelected,
+  onSelect,
+  onDownloadComplete,
+}: {
+  model: NeuralModelInfo
+  isSelected: boolean
+  onSelect: () => void
+  onDownloadComplete: () => void
+}) {
+  const [downloaded, setDownloaded] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    model.isDownloaded().then(setDownloaded).catch(() => setDownloaded(false))
+  }, [model])
+
+  const sizeMB = (model.size / 1024 / 1024).toFixed(0)
+
+  async function handleDownload(e: React.MouseEvent) {
+    e.stopPropagation()
+    setBusy(true)
+    setProgress(0)
+    try {
+      await model.initialize((p) => setProgress(p))
+      setDownloaded(true)
+      onDownloadComplete()
+    } catch {
+      // Download failed
+    } finally {
+      setBusy(false)
+      setProgress(0)
+    }
+  }
+
+  async function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation()
+    setBusy(true)
+    try {
+      await model.clearCache()
+      setDownloaded(false)
+    } catch {
+      // Delete failed
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      onClick={downloaded ? onSelect : undefined}
+      style={{
+        ...chipStyle,
+        background: isSelected ? '#0f3460' : 'rgba(255,255,255,0.03)',
+        border: isSelected ? '1px solid #4dabf7' : '1px solid #0f3460',
+        cursor: downloaded ? 'pointer' : 'default',
+        gap: 8,
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Progress bar background */}
+      {busy && progress > 0 && (
+        <div style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: `${Math.round(progress * 100)}%`,
+          background: 'rgba(77, 171, 247, 0.12)',
+          transition: 'width 0.3s ease',
+        }} />
+      )}
+
+      <span style={{
+        color: isSelected ? '#4dabf7' : downloaded ? '#e8e8e8' : '#a0a0b0',
+        fontWeight: isSelected ? 600 : 400,
+        position: 'relative',
+      }}>
+        {model.name}
+      </span>
+
+      <span style={{ color: '#666', fontSize: 11, position: 'relative' }}>
+        ~{sizeMB} MB
+      </span>
+
+      {downloaded === false && !busy && (
+        <button onClick={handleDownload} style={chipActionStyle}>
+          Download
+        </button>
+      )}
+
+      {busy && (
+        <span style={{ color: '#4dabf7', fontSize: 11, position: 'relative' }}>
+          {Math.round(progress * 100)}%
+        </span>
+      )}
+
+      {downloaded && (
+        <>
+          <span style={{ color: '#4cd964', fontSize: 11, position: 'relative' }}>
+            {isSelected ? 'Active' : 'Ready'}
+          </span>
+          <button onClick={handleDelete} style={{ ...chipActionStyle, color: '#e94560' }}>
+            ×
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Inspector
 // ---------------------------------------------------------------------------
 
@@ -108,9 +274,148 @@ export function Inspector() {
   const [dragging, setDragging] = useState(false)
   const [analysis, setAnalysis] = useState<ImageAnalysis | null>(null)
   const [selectedModelId, setSelectedModelId] = useState(getDefaultOCRModel().id)
+  const [selectedNeuralId, setSelectedNeuralId] = useState(getSelectedNeuralModelId)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const runIdRef = useRef(0)
   const dragCountRef = useRef(0)
+
+  // ---------------------------------------------------------------------------
+  // Persistent neural worker — survives across image selections
+  // ---------------------------------------------------------------------------
+  const neuralWorkerRef = useRef<Worker | null>(null)
+  const neuralWorkerModelRef = useRef('')
+  const neuralWorkerReadyRef = useRef(false)
+  const neuralInitPromiseRef = useRef<Promise<Worker> | null>(null)
+  const neuralLoadProgressRef = useRef<((progress: number) => void) | null>(null)
+
+  function terminateNeuralWorker() {
+    neuralWorkerRef.current?.terminate()
+    neuralWorkerRef.current = null
+    neuralWorkerModelRef.current = ''
+    neuralWorkerReadyRef.current = false
+    neuralInitPromiseRef.current = null
+    neuralLoadProgressRef.current = null
+  }
+
+  function ensureNeuralWorker(modelId: string, config: NeuralModelConfig): Promise<Worker> {
+    // Already ready for this model — return immediately
+    if (neuralWorkerRef.current && neuralWorkerModelRef.current === modelId && neuralWorkerReadyRef.current) {
+      return Promise.resolve(neuralWorkerRef.current)
+    }
+    // Currently loading the same model — share the in-flight promise
+    if (neuralInitPromiseRef.current && neuralWorkerModelRef.current === modelId && neuralWorkerRef.current) {
+      return neuralInitPromiseRef.current
+    }
+    // Different model or no worker — start fresh
+    terminateNeuralWorker()
+
+    const worker = new Worker(
+      new URL('../../src/workers/translation-worker.ts', import.meta.url),
+      { type: 'module' },
+    )
+    neuralWorkerRef.current = worker
+    neuralWorkerModelRef.current = modelId
+
+    const fileProgress = new Map<string, { loaded: number; total: number }>()
+
+    const promise = new Promise<Worker>((resolve, reject) => {
+      // Watchdog: resets on every progress event so active loading never times out,
+      // but genuinely stuck loads (no progress for 90s) do.
+      const WATCHDOG_MS = 90_000
+      let watchdog = setTimeout(onTimeout, WATCHDOG_MS)
+      function onTimeout() {
+        terminateNeuralWorker()
+        reject(new Error('Model loading timed out'))
+      }
+      function resetWatchdog() {
+        clearTimeout(watchdog)
+        watchdog = setTimeout(onTimeout, WATCHDOG_MS)
+      }
+
+      worker.onmessage = (event) => {
+        const { type, payload } = event.data
+        if (type === 'loading') {
+          resetWatchdog()
+          const file = payload.file ?? ''
+          if (file && payload.total > 0) {
+            fileProgress.set(file, { loaded: payload.loaded ?? 0, total: payload.total })
+            let totalBytes = 0, loadedBytes = 0
+            for (const f of fileProgress.values()) {
+              totalBytes += f.total
+              loadedBytes += f.loaded
+            }
+            neuralLoadProgressRef.current?.(totalBytes > 0 ? (loadedBytes / totalBytes) * 100 : 0)
+          } else {
+            neuralLoadProgressRef.current?.(payload.progress ?? 0)
+          }
+        } else if (type === 'ready') {
+          clearTimeout(watchdog)
+          neuralWorkerReadyRef.current = true
+          neuralInitPromiseRef.current = null
+          resolve(worker)
+        } else if (type === 'error') {
+          clearTimeout(watchdog)
+          terminateNeuralWorker()
+          reject(new Error(payload.message))
+        }
+      }
+
+      worker.onerror = (err) => {
+        clearTimeout(watchdog)
+        terminateNeuralWorker()
+        reject(new Error(err.message || 'Worker error'))
+      }
+
+      worker.postMessage({ type: 'init', payload: { config } })
+    })
+
+    neuralInitPromiseRef.current = promise
+    return promise
+  }
+
+  function translateWithWorker(
+    worker: Worker,
+    lines: { index: number; japanese: string }[],
+    onProgress?: (progress: number) => void,
+  ): Promise<Map<number, string>> {
+    return new Promise((resolve, reject) => {
+      const results = new Map<number, string>()
+      const timeout = setTimeout(() => resolve(results), 120_000)
+
+      worker.onmessage = (event) => {
+        const { type, payload } = event.data
+        switch (type) {
+          case 'translate-partial':
+            results.set(payload.index, payload.translation)
+            onProgress?.((results.size / lines.length) * 100)
+            break
+          case 'translate-done':
+            clearTimeout(timeout)
+            resolve(results)
+            break
+          case 'translate-result':
+            if (payload?.error) {
+              clearTimeout(timeout)
+              reject(new Error(payload.error))
+            }
+            break
+          case 'error':
+            clearTimeout(timeout)
+            terminateNeuralWorker()
+            reject(new Error(payload.message))
+            break
+        }
+      }
+
+      worker.onerror = (err) => {
+        clearTimeout(timeout)
+        terminateNeuralWorker()
+        reject(new Error(err.message || 'Worker error'))
+      }
+
+      worker.postMessage({ type: 'translate', payload: { lines }, id: 'inspector' })
+    })
+  }
 
   // Discover fixtures on mount
   useEffect(() => {
@@ -118,6 +423,23 @@ export function Inspector() {
       .then((r) => r.json())
       .then((names: string[]) => setFixtureGroups(groupFixtures(names)))
       .catch(() => setFixtureGroups([]))
+  }, [])
+
+  // Terminate neural worker on unmount
+  useEffect(() => {
+    return () => { neuralWorkerRef.current?.terminate() }
+  }, [])
+
+  // Eagerly init neural worker on mount if a model is selected and downloaded
+  useEffect(() => {
+    const modelId = selectedNeuralId
+    if (!modelId) return
+    const model = getNeuralModel(modelId)
+    if (!model) return
+    model.isDownloaded().then((downloaded) => {
+      if (downloaded) ensureNeuralWorker(modelId, model.workerConfig).catch(() => {})
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ---------------------------------------------------------------------------
@@ -238,17 +560,17 @@ export function Inspector() {
   // ---------------------------------------------------------------------------
 
   const runPipeline = useCallback(
-    async (img: ImageData, p: PipelineParams, modelId: string) => {
+    async (img: ImageData, p: PipelineParams, modelId: string, neuralId: string) => {
       const runId = ++runIdRef.current
       setRunning(true)
       setStatus('Running pipeline...')
-      setOutput(EMPTY_OUTPUT) // Clear stale results from previous run
+      setOutput(EMPTY_OUTPUT)
 
-      const timings: StageTimings = { preprocessing: 0, ocr: 0, filtering: 0, translation: 0 }
+      const timings: StageTimings = { preprocessing: 0, ocr: 0, filtering: 0, translation: 0, neural: 0 }
       const ocrModel = getOCRModel(modelId) ?? getDefaultOCRModel()
 
       try {
-        // Stage 1: Preprocessing (skip for PaddleOCR — its detector handles scene text natively)
+        // Stage 1: Preprocessing (skip for PaddleOCR)
         let preprocessed: ImageData = img
         if (ocrModel.id === 'tesseract-jpn') {
           setStatus('Preprocessing...')
@@ -277,7 +599,7 @@ export function Inspector() {
 
         if (runId !== runIdRef.current) return
 
-        // Stage 3: Filtering (using custom params)
+        // Stage 3: Filtering
         setStatus('Filtering...')
         const t2 = performance.now()
         let filteredLines = filterByConfidence(rawOCR.lines, p.minConfidence)
@@ -291,12 +613,11 @@ export function Inspector() {
 
         if (runId !== runIdRef.current) return
 
-        // Stage 4: Dictionary translation (fast, runs immediately)
-        setStatus('Translating...')
+        // Stage 4: Dictionary translation
+        setStatus('Translating (dictionary)...')
         const t3 = performance.now()
         let translations: TranslationResult[] = []
         const fullText = filteredLines.map((l) => l.text).join('')
-        const lineTexts = filteredLines.map((l) => l.text)
         if (fullText.length > 0) {
           const translationModel = getDefaultTranslationModel()
           await translationModel.initialize()
@@ -306,22 +627,71 @@ export function Inspector() {
 
         if (runId !== runIdRef.current) return
 
-        // Show dictionary results immediately
-        setOutput({ preprocessed, rawOCR, filteredLines, translations, phraseTranslations: null, timings })
-        const totalMs = Object.values(timings).reduce((a, b) => a + b, 0)
-        setStatus(`Done in ${totalMs.toFixed(0)}ms`)
+        // Determine neural status — skip isDownloaded() if worker is already warm
+        const neuralModel = getNeuralModel(neuralId)
+        const workerWarm = neuralWorkerReadyRef.current && neuralWorkerModelRef.current === neuralId
+        let shouldRunNeural = false
+        let neuralStatus: NeuralStatus = 'no-model'
 
-        // Stage 5: Phrase translation (async, may download ~50 MB model)
-        // Runs in the background so it doesn't block the main results.
-        if (lineTexts.length > 0) {
-          setStatus(`Done in ${totalMs.toFixed(0)}ms — loading phrase model...`)
-          translatePhrases(lineTexts).then((phraseResult) => {
+        if (neuralModel) {
+          if (workerWarm) {
+            shouldRunNeural = true
+            neuralStatus = 'translating'
+          } else {
+            const isDownloaded = await neuralModel.isDownloaded()
+            if (isDownloaded) {
+              shouldRunNeural = true
+              neuralStatus = 'loading'
+            } else {
+              neuralStatus = 'not-downloaded'
+            }
+          }
+        }
+
+        const baseOutput = { preprocessed, rawOCR, filteredLines, translations, neuralTranslations: new Map<number, string>(), neuralStatus, neuralProgress: 0, neuralError: null, timings }
+        setOutput(baseOutput)
+        const dictMs = Object.values(timings).reduce((a, b) => a + b, 0)
+        setStatus(
+          neuralStatus === 'loading' ? `Loading ${neuralModel!.name}...` :
+          neuralStatus === 'translating' ? `Translating (${neuralModel!.name})...` :
+          `Done in ${dictMs.toFixed(0)}ms`)
+        setRunning(shouldRunNeural)
+
+        // Stage 5: Neural translation (persistent worker)
+        if (shouldRunNeural && neuralModel && filteredLines.length > 0) {
+          const t4 = performance.now()
+          const lines = filteredLines.map((l, i) => ({ index: i, japanese: l.text }))
+          try {
+            // Set progress callback for loading phase (read via ref by worker handler)
+            neuralLoadProgressRef.current = (progress) => {
+              if (runId !== runIdRef.current) return
+              setOutput((prev) => ({ ...prev, neuralStatus: 'loading', neuralProgress: progress }))
+              setStatus(`Loading ${neuralModel.name}... ${Math.round(progress)}%`)
+            }
+            const worker = await ensureNeuralWorker(neuralId, neuralModel.workerConfig)
+            neuralLoadProgressRef.current = null
+
             if (runId !== runIdRef.current) return
-            setOutput((prev) => ({ ...prev, phraseTranslations: phraseResult }))
-            setStatus(`Done in ${totalMs.toFixed(0)}ms`)
-          }).catch(() => {
-            // Phrase translation is best-effort; don't fail the pipeline
-          })
+
+            setOutput((prev) => ({ ...prev, neuralStatus: 'translating' }))
+            setStatus(`Translating (${neuralModel.name})...`)
+
+            const results = await translateWithWorker(worker, lines)
+            timings.neural = performance.now() - t4
+            if (runId === runIdRef.current) {
+              setOutput({ ...baseOutput, neuralTranslations: results, neuralStatus: 'done', neuralProgress: 100, neuralError: null, timings })
+              const totalMs = Object.values(timings).reduce((a, b) => a + b, 0)
+              setStatus(`Done in ${totalMs.toFixed(0)}ms`)
+              setRunning(false)
+            }
+          } catch (err) {
+            if (runId === runIdRef.current) {
+              const message = err instanceof Error ? err.message : String(err)
+              setOutput((prev) => ({ ...prev, neuralStatus: 'error', neuralError: message }))
+              setStatus(`Done in ${dictMs.toFixed(0)}ms (neural failed)`)
+              setRunning(false)
+            }
+          }
         }
       } catch (err) {
         if (runId === runIdRef.current) {
@@ -343,27 +713,38 @@ export function Inspector() {
       if (!imageData) return
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
-        runPipeline(imageData, newParams, selectedModelId)
+        runPipeline(imageData, newParams, selectedModelId, selectedNeuralId)
       }, 300)
     },
-    [imageData, runPipeline, selectedModelId],
+    [imageData, runPipeline, selectedModelId, selectedNeuralId],
   )
 
-  // Re-run when model changes
+  // Re-run when OCR model changes
   const handleModelChange = useCallback(
     (modelId: string) => {
       setSelectedModelId(modelId)
       if (!imageData) return
-      runPipeline(imageData, params, modelId)
+      runPipeline(imageData, params, modelId, selectedNeuralId)
     },
-    [imageData, params, runPipeline],
+    [imageData, params, runPipeline, selectedNeuralId],
+  )
+
+  // Re-run when neural model changes
+  const handleNeuralModelChange = useCallback(
+    (neuralId: string) => {
+      if (!neuralId) terminateNeuralWorker()
+      setSelectedNeuralId(neuralId)
+      if (!imageData) return
+      runPipeline(imageData, params, selectedModelId, neuralId)
+    },
+    [imageData, params, runPipeline, selectedModelId],
   )
 
   // Run analysis + pipeline when image changes
   useEffect(() => {
     if (imageData) {
       setAnalysis(analyzeImage(imageData))
-      runPipeline(imageData, params, selectedModelId)
+      runPipeline(imageData, params, selectedModelId, selectedNeuralId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageData])
@@ -388,7 +769,7 @@ export function Inspector() {
       </h1>
 
       {/* Image selection toolbar */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <select
           onChange={(e) => {
             if (e.target.value) loadFixtureByName(e.target.value)
@@ -445,6 +826,18 @@ export function Inspector() {
           Paste or drag-and-drop an image
         </span>
       </div>
+
+      {/* Neural model bar */}
+      <NeuralModelBar
+        selectedId={selectedNeuralId}
+        onSelect={handleNeuralModelChange}
+        onDownloadComplete={() => {
+          // Re-run pipeline so it picks up the newly downloaded model
+          if (imageData) {
+            runPipeline(imageData, params, selectedModelId, selectedNeuralId)
+          }
+        }}
+      />
 
       {/* Parameters */}
       <ParameterPanel
@@ -506,7 +899,10 @@ export function Inspector() {
             <ResultsPanel
               filteredLines={output.filteredLines}
               translations={output.translations}
-              phraseTranslations={output.phraseTranslations}
+              neuralTranslations={output.neuralTranslations}
+              neuralStatus={output.neuralStatus}
+              neuralProgress={output.neuralProgress}
+              neuralError={output.neuralError}
             />
           ) : (
             <Placeholder text={output.rawOCR ? 'No results' : 'Waiting...'} />
@@ -537,6 +933,7 @@ export function Inspector() {
           <span>OCR: {output.timings.ocr.toFixed(0)}ms</span>
           <span>Filter: {output.timings.filtering.toFixed(0)}ms</span>
           <span>Translate: {output.timings.translation.toFixed(0)}ms</span>
+          <span>Neural: {output.timings.neural.toFixed(0)}ms</span>
           <span>|</span>
           <span>
             Regions found: {output.rawOCR.lines.length}
@@ -701,6 +1098,41 @@ const hintStyle: React.CSSProperties = {
   color: '#666',
   fontSize: 12,
   marginLeft: 'auto',
+}
+
+const neuralBarStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  alignItems: 'center',
+  marginBottom: 12,
+  padding: '8px 12px',
+  background: '#16213e',
+  borderRadius: 8,
+  flexWrap: 'wrap',
+}
+
+const chipStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '4px 10px',
+  borderRadius: 6,
+  fontSize: 13,
+  cursor: 'pointer',
+  border: '1px solid #0f3460',
+  background: 'transparent',
+  color: '#e8e8e8',
+}
+
+const chipActionStyle: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  color: '#4dabf7',
+  fontSize: 11,
+  fontWeight: 600,
+  cursor: 'pointer',
+  padding: '0 2px',
+  position: 'relative',
 }
 
 const analysisBarStyle: React.CSSProperties = {

@@ -107,6 +107,12 @@ export default defineConfig({
       '@': resolve(__dirname, '../../src'),
     },
   },
+  optimizeDeps: {
+    include: ['@huggingface/transformers'],
+  },
+  worker: {
+    format: 'es',
+  },
   server: {
     port: 5174,
     host: true,

@@ -1,13 +1,18 @@
 import type { OCRLine } from '@/services/ocr/types.ts'
 import type { TranslationResult } from '@/services/translation/types.ts'
 
+type NeuralStatus = 'idle' | 'loading' | 'translating' | 'done' | 'error' | 'not-downloaded' | 'no-model'
+
 interface Props {
   filteredLines: OCRLine[]
   translations: TranslationResult[]
-  phraseTranslations: string[] | null
+  neuralTranslations: Map<number, string>
+  neuralStatus: NeuralStatus
+  neuralProgress: number
+  neuralError: string | null
 }
 
-export function ResultsPanel({ filteredLines, translations, phraseTranslations }: Props) {
+export function ResultsPanel({ filteredLines, translations, neuralTranslations, neuralStatus, neuralProgress, neuralError }: Props) {
   return (
     <div style={{ padding: 12, fontSize: 13 }}>
       {/* Detected lines */}
@@ -23,17 +28,18 @@ export function ResultsPanel({ filteredLines, translations, phraseTranslations }
         ))}
       </div>
 
-      {/* Phrase translation (Opus-MT) */}
+      {/* Neural translation */}
       <div style={{ marginBottom: 12 }}>
-        <div style={sectionHeaderStyle}>Phrase Translation</div>
-        {phraseTranslations && phraseTranslations.length > 0 ? (
-          phraseTranslations.map((t, i) => (
-            <div key={i} style={phraseStyle}>{t}</div>
-          ))
+        <div style={sectionHeaderStyle}>Neural Translation</div>
+        {neuralTranslations.size > 0 ? (
+          filteredLines.map((_, i) => {
+            const t = neuralTranslations.get(i)
+            return t ? (
+              <div key={i} style={neuralStyle}>{t}</div>
+            ) : null
+          })
         ) : (
-          <div style={{ color: '#a0a0b0' }}>
-            {phraseTranslations === null ? 'Model not loaded' : 'No translations'}
-          </div>
+          <NeuralStatusDisplay status={neuralStatus} progress={neuralProgress} error={neuralError} />
         )}
       </div>
 
@@ -76,6 +82,41 @@ export function ResultsPanel({ filteredLines, translations, phraseTranslations }
   )
 }
 
+function NeuralStatusDisplay({ status, progress, error }: { status: NeuralStatus; progress: number; error: string | null }) {
+  if (status === 'not-downloaded') {
+    return <div style={{ color: '#a0a0b0', fontSize: 12 }}>Model not downloaded — use the bar above</div>
+  }
+  if (status === 'no-model') {
+    return <div style={{ color: '#a0a0b0', fontSize: 12 }}>No model selected</div>
+  }
+  if (status === 'error') {
+    return <div style={{ color: '#e94560', fontSize: 12 }}>Error: {error ?? 'Unknown error'}</div>
+  }
+  if (status === 'done') {
+    return <div style={{ color: '#a0a0b0', fontSize: 12 }}>No translation produced</div>
+  }
+  if (status === 'loading') {
+    return (
+      <div>
+        <div style={{ color: '#4dabf7', fontSize: 12, marginBottom: 4 }}>
+          Loading model... {Math.round(progress)}%
+        </div>
+        <div style={progressBarTrackStyle}>
+          <div style={{ ...progressBarFillStyle, width: `${Math.round(progress)}%` }} />
+        </div>
+      </div>
+    )
+  }
+  if (status === 'translating') {
+    return (
+      <div style={{ color: '#4dabf7', fontSize: 12 }}>
+        Translating...
+      </div>
+    )
+  }
+  return <div style={{ color: '#a0a0b0', fontSize: 12 }}>Idle</div>
+}
+
 const sectionHeaderStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 600,
@@ -90,8 +131,8 @@ const lineStyle: React.CSSProperties = {
   borderBottom: '1px solid rgba(255,255,255,0.05)',
 }
 
-const phraseStyle: React.CSSProperties = {
-  color: '#c0c0d0',
+const neuralStyle: React.CSSProperties = {
+  color: '#4dabf7',
   padding: '4px 0',
   borderBottom: '1px solid rgba(255,255,255,0.05)',
 }
@@ -109,4 +150,19 @@ const posStyle: React.CSSProperties = {
   background: 'rgba(233, 69, 96, 0.15)',
   padding: '1px 6px',
   borderRadius: 3,
+}
+
+const progressBarTrackStyle: React.CSSProperties = {
+  width: '100%',
+  height: 3,
+  background: 'rgba(255,255,255,0.08)',
+  borderRadius: 2,
+  overflow: 'hidden',
+}
+
+const progressBarFillStyle: React.CSSProperties = {
+  height: '100%',
+  background: '#4dabf7',
+  borderRadius: 2,
+  transition: 'width 0.3s ease',
 }

@@ -1,16 +1,29 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ocrModels } from '../services/ocr/registry.ts'
 import { translationModels } from '../services/translation/registry.ts'
-import { phraseModelInfo } from '../services/translation/phrase.ts'
-import type { ModelInfo } from '../services/translation/types.ts'
+import { neuralModels, getSelectedNeuralModelId, setSelectedNeuralModelId } from '../services/translation/neural-registry.ts'
+import type { NeuralModelInfo } from '../services/translation/types.ts'
 import type { OCRModel } from '../services/ocr/types.ts'
 import type { TranslationModel } from '../services/translation/types.ts'
+import type { ModelInfo } from '../services/translation/types.ts'
+import type { useNeuralTranslator } from '../hooks/useNeuralTranslator.ts'
 
 interface ModelManagerProps {
   onBack: () => void
+  neural: ReturnType<typeof useNeuralTranslator>
+  onNeuralModelChange: (id: string) => void
 }
 
-export function ModelManager({ onBack }: ModelManagerProps) {
+export function ModelManager({ onBack, neural, onNeuralModelChange }: ModelManagerProps) {
+  const [selectedId, setSelectedId] = useState(getSelectedNeuralModelId)
+
+  function handleSelect(id: string) {
+    setSelectedNeuralModelId(id)
+    setSelectedId(id)
+    neural.terminate()
+    onNeuralModelChange(id)
+  }
+
   return (
     <div style={{
       height: '100%',
@@ -52,9 +65,17 @@ export function ModelManager({ onBack }: ModelManagerProps) {
         <ModelCard key={m.id} model={m} />
       ))}
 
-      {/* Phrase Translation */}
-      <SectionHeader style={{ marginTop: 24 }}>Phrase Translation</SectionHeader>
-      <ModelCard model={phraseModelInfo} />
+      {/* Neural Translation */}
+      <SectionHeader style={{ marginTop: 24 }}>Neural Translation</SectionHeader>
+      {neuralModels.map((m) => (
+        <NeuralCard
+          key={m.id}
+          model={m}
+          isSelected={m.id === selectedId}
+          neural={neural}
+          onSelect={() => handleSelect(m.id)}
+        />
+      ))}
 
       {/* Info */}
       <p style={{
@@ -67,6 +88,173 @@ export function ModelManager({ onBack }: ModelManagerProps) {
         Models are cached locally for offline use.
         Delete a model to free storage, then re-download when needed.
       </p>
+    </div>
+  )
+}
+
+/** Card for a neural translation model with download + selection */
+function NeuralCard({
+  model,
+  isSelected,
+  neural,
+  onSelect,
+}: {
+  model: NeuralModelInfo
+  isSelected: boolean
+  neural: ReturnType<typeof useNeuralTranslator>
+  onSelect: () => void
+}) {
+  const [downloaded, setDownloaded] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+
+  const checkStatus = useCallback(() => {
+    model.isDownloaded().then(setDownloaded).catch(() => setDownloaded(false))
+  }, [model])
+
+  useEffect(() => {
+    checkStatus()
+  }, [checkStatus])
+
+  // Sync loading state from hook when this is the selected model
+  useEffect(() => {
+    if (isSelected && neural.isModelLoading) {
+      setBusy(true)
+      setProgress(neural.downloadProgress / 100)
+    }
+  }, [isSelected, neural.isModelLoading, neural.downloadProgress])
+
+  useEffect(() => {
+    if (isSelected && neural.isModelLoaded && busy) {
+      setBusy(false)
+      setProgress(0)
+      setDownloaded(true)
+    }
+  }, [isSelected, neural.isModelLoaded, busy])
+
+  const sizeMB = (model.size / 1024 / 1024).toFixed(0)
+
+  async function handleDownload() {
+    setBusy(true)
+    setError(null)
+    setProgress(0)
+    try {
+      await model.initialize((p) => setProgress(p))
+      setDownloaded(true)
+      neural.recheckDownloaded()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed')
+    } finally {
+      setBusy(false)
+      setProgress(0)
+    }
+  }
+
+  async function handleDelete() {
+    setBusy(true)
+    setError(null)
+    try {
+      if (isSelected) neural.terminate()
+      await model.clearCache()
+      setDownloaded(false)
+      neural.recheckDownloaded()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{
+      padding: 14,
+      background: 'var(--bg-surface)',
+      borderRadius: 10,
+      marginBottom: 8,
+      border: isSelected ? '1px solid rgba(76, 217, 100, 0.3)' : '1px solid transparent',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <span style={{ fontSize: 15, fontWeight: 600 }}>{model.name}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 8 }}>
+            ~{sizeMB} MB
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {downloaded !== null && (
+            <span style={{
+              fontSize: 11,
+              padding: '3px 8px',
+              borderRadius: 4,
+              background: downloaded ? 'rgba(76, 217, 100, 0.15)' : 'rgba(255,255,255,0.06)',
+              color: downloaded ? '#4cd964' : 'var(--text-secondary)',
+            }}>
+              {downloaded ? 'Installed' : 'Not installed'}
+            </span>
+          )}
+          {isSelected && (
+            <span style={{
+              fontSize: 11,
+              padding: '3px 8px',
+              borderRadius: 4,
+              background: 'rgba(77, 171, 247, 0.15)',
+              color: '#4dabf7',
+            }}>
+              Selected
+            </span>
+          )}
+        </div>
+      </div>
+
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>
+        {model.description}
+      </p>
+
+      {busy && progress > 0 && (
+        <div style={{
+          width: '100%',
+          height: 4,
+          background: 'rgba(255,255,255,0.08)',
+          borderRadius: 2,
+          marginTop: 10,
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            width: `${Math.round(progress * 100)}%`,
+            height: '100%',
+            background: 'var(--accent)',
+            borderRadius: 2,
+            transition: 'width 0.3s ease',
+          }} />
+        </div>
+      )}
+
+      {error && (
+        <p style={{ fontSize: 12, color: 'var(--accent)', marginTop: 8 }}>
+          {error}
+        </p>
+      )}
+
+      {downloaded !== null && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          {!downloaded && (
+            <ActionButton onClick={handleDownload} disabled={busy}>
+              {busy ? `Downloading ${Math.round(progress * 100)}%` : 'Download'}
+            </ActionButton>
+          )}
+          {downloaded && !isSelected && (
+            <ActionButton onClick={onSelect} disabled={busy} variant="primary">
+              Use
+            </ActionButton>
+          )}
+          {downloaded && (
+            <ActionButton onClick={handleDelete} disabled={busy} variant="danger">
+              {busy ? 'Deleting...' : 'Delete'}
+            </ActionButton>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -224,14 +412,18 @@ function ActionButton({
   children: React.ReactNode
   onClick: () => void
   disabled?: boolean
-  variant?: 'default' | 'danger'
+  variant?: 'default' | 'danger' | 'primary'
 }) {
   const bg = variant === 'danger'
     ? 'rgba(233, 69, 96, 0.15)'
-    : 'rgba(255,255,255,0.08)'
+    : variant === 'primary'
+      ? 'rgba(77, 171, 247, 0.15)'
+      : 'rgba(255,255,255,0.08)'
   const color = variant === 'danger'
     ? '#e94560'
-    : 'var(--text-secondary)'
+    : variant === 'primary'
+      ? '#4dabf7'
+      : 'var(--text-secondary)'
 
   return (
     <button

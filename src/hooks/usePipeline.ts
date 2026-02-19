@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { runPipeline, INITIAL_STATE, type PipelineState, type PipelineOptions } from '../services/pipeline.ts'
 import { getDefaultOCRModel } from '../services/ocr/registry.ts'
-import { terminatePhraseModel } from '../services/translation/phrase.ts'
 
 /** Release WASM models after this many ms of inactivity to free memory. */
 const IDLE_TIMEOUT_MS = 2 * 60 * 1000 // 2 minutes
@@ -18,7 +17,6 @@ export function usePipeline() {
       // Only terminate if not currently running a scan
       if (!runningRef.current) {
         await getDefaultOCRModel().terminate()
-        await terminatePhraseModel()
       }
     }, IDLE_TIMEOUT_MS)
   }

@@ -4,7 +4,6 @@ import { getDefaultOCRModel } from './ocr/registry.ts'
 import { getDefaultTranslationModel } from './translation/registry.ts'
 import { filterOCRLines } from './ocr/filters.ts'
 import { preprocessFrame } from './preprocessing.ts'
-import { translatePhrases } from './translation/phrase.ts'
 
 export type PipelinePhase =
   | 'idle'
@@ -18,9 +17,8 @@ export type PipelinePhase =
 export interface PipelineState {
   phase: PipelinePhase
   ocrResult: OCRResult | null
-  translations: TranslationResult[] | null
-  /** Per-line phrase translations, or null if unavailable */
-  phraseTranslation: string[] | null
+  /** Per-line word-by-word dictionary translations */
+  translations: TranslationResult[][] | null
   error: string | null
   /** Dimensions of the source image (for overlay scaling) */
   imageSize: { width: number; height: number } | null
@@ -30,7 +28,6 @@ export const INITIAL_STATE: PipelineState = {
   phase: 'idle',
   ocrResult: null,
   translations: null,
-  phraseTranslation: null,
   error: null,
   imageSize: null,
 }
@@ -85,7 +82,7 @@ export async function runPipeline(
       return
     }
 
-    // Segmentation + Translation phase
+    // Segmentation + Dictionary phase (instant)
     state = { ...state, phase: 'segmenting' }
     onState(state)
 
@@ -95,14 +92,15 @@ export async function runPipeline(
     state = { ...state, phase: 'translating' }
     onState(state)
 
-    // Run word-by-word lookup and per-line phrase translation in parallel
-    const lineTexts = ocrResult.lines.map((l) => l.text)
-    const [translations, phraseTranslation] = await Promise.all([
-      translationModel.translate(ocrResult.fullText),
-      translatePhrases(lineTexts),
-    ])
+    // Translate each line independently for per-line dictionary results
+    const translations: TranslationResult[][] = []
+    for (const line of ocrResult.lines) {
+      const lineTranslations = await translationModel.translate(line.text)
+      translations.push(lineTranslations)
+    }
 
-    state = { ...state, phase: 'done', translations, phraseTranslation }
+    // Pipeline finishes here — neural translation (NLLB) is handled externally
+    state = { ...state, phase: 'done', translations }
     onState(state)
   } catch (err) {
     state = {

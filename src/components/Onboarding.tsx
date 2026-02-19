@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { isDictionaryLoaded, loadDictionaryFromJSON } from '../services/storage/indexeddb.ts'
 import { getDefaultOCRModel } from '../services/ocr/registry.ts'
-import { initializePhraseModel, isPhraseModelDownloaded } from '../services/translation/phrase.ts'
 
 interface OnboardingProps {
   onReady: () => void
@@ -24,28 +23,19 @@ export function Onboarding({ onReady }: OnboardingProps) {
     setStatusText('Checking assets...')
     try {
       const ocrModel = getDefaultOCRModel()
-      const [dictLoaded, ocrLoaded, phraseLoaded] = await Promise.all([
+      const [dictLoaded, ocrLoaded] = await Promise.all([
         isDictionaryLoaded(),
         ocrModel.isDownloaded(),
-        isPhraseModelDownloaded(),
       ])
 
-      if (dictLoaded && ocrLoaded && phraseLoaded) {
-        // All assets cached — initialize models with individual error handling
+      if (dictLoaded && ocrLoaded) {
+        // Core assets cached — initialize OCR
         setStatusText('Initializing models...')
 
         try {
-          await ocrModel.initialize((p) => setProgress(p * 0.5))
+          await ocrModel.initialize((p) => setProgress(p))
         } catch (err) {
           console.warn('OCR model init failed, will re-download:', err)
-          setStage('needs-download')
-          return
-        }
-
-        try {
-          await initializePhraseModel((p) => setProgress(0.5 + p * 0.5))
-        } catch (err) {
-          console.warn('Phrase model init failed, will re-download:', err)
           setStage('needs-download')
           return
         }
@@ -65,22 +55,16 @@ export function Onboarding({ onReady }: OnboardingProps) {
     setStage('downloading')
     setProgress(0)
     try {
-      // Step 1: Load dictionary into IndexedDB (0-30%)
+      // Step 1: Load dictionary into IndexedDB (0-40%)
       setStatusText('Loading dictionary...')
       await loadDictionaryFromJSON((loaded, total) => {
-        setProgress(loaded / total * 0.3)
+        setProgress(loaded / total * 0.4)
       })
 
-      // Step 2: Download + initialize OCR model (30-55%)
+      // Step 2: Download + initialize OCR model (40-100%)
       setStatusText('Downloading OCR model...')
       await getDefaultOCRModel().initialize((p) => {
-        setProgress(0.3 + p * 0.25)
-      })
-
-      // Step 3: Download translation model / ONNX weights (55-100%)
-      setStatusText('Downloading translation model...')
-      await initializePhraseModel((p) => {
-        setProgress(0.55 + p * 0.45)
+        setProgress(0.4 + p * 0.6)
       })
 
       setStage('ready')
@@ -104,7 +88,7 @@ export function Onboarding({ onReady }: OnboardingProps) {
     }}>
       {/* Logo */}
       <div style={{ fontSize: 64, lineHeight: 1 }}>
-        <span style={{ color: 'var(--accent)' }}>読</span>
+        <span style={{ color: 'var(--accent)' }}>&#35501;</span>
       </div>
       <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Yomeru</h1>
       <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 280 }}>
@@ -120,7 +104,7 @@ export function Onboarding({ onReady }: OnboardingProps) {
       {stage === 'needs-download' && (
         <>
           <p style={{ color: 'var(--text-secondary)', fontSize: 13, maxWidth: 300 }}>
-            Yomeru needs to download language data and translation models (~50 MB) to work offline. This only happens once.
+            Yomeru needs to download language data and the OCR model (~20 MB) to work offline. This only happens once.
           </p>
           <button
             onClick={startDownload}

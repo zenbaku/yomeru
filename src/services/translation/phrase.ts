@@ -1,5 +1,5 @@
 import type { TranslationPipeline } from '@huggingface/transformers'
-import type { ModelInfo } from './types.ts'
+import type { NeuralModelInfo } from './types.ts'
 
 const MODEL_ID = 'Xenova/opus-mt-ja-en'
 /** Opus-MT typically supports up to ~512 tokens; cap input chars to stay safe. */
@@ -120,25 +120,41 @@ export async function terminatePhraseModel(): Promise<void> {
 }
 
 /**
- * Delete all cached phrase model data from the browser.
+ * Delete cached Opus-MT model data from the browser.
+ * Only removes opus-mt entries — does not nuke the entire transformers cache.
  */
 export async function clearPhraseModelCache(): Promise<void> {
   await terminatePhraseModel()
   try {
-    await caches.delete('transformers-cache')
-    await caches.delete('hf-models')
+    const cacheNames = ['transformers-cache', 'hf-models']
+    for (const name of cacheNames) {
+      const cache = await caches.open(name)
+      const keys = await cache.keys()
+      for (const req of keys) {
+        if (req.url.includes('opus-mt-ja-en')) {
+          await cache.delete(req)
+        }
+      }
+    }
   } catch {
     // Cache API may not be available
   }
 }
 
-/** Phrase translation model info for the Models page. */
-export const phraseModelInfo: ModelInfo = {
+/** Opus-MT model info for the Models page. */
+export const opusMtNeuralModel: NeuralModelInfo = {
   id: 'opus-mt-ja-en',
   name: 'Opus-MT Ja→En',
-  description: 'Neural machine translation for full phrases and sentences (~50 MB)',
+  description: 'Lightweight neural translation for Japanese to English (~50 MB)',
   size: 50_000_000,
   isDownloaded: isPhraseModelDownloaded,
   initialize: initializePhraseModel,
   clearCache: clearPhraseModelCache,
+  workerConfig: {
+    hfModelId: 'Xenova/opus-mt-ja-en',
+    dtype: 'q8',
+    device: 'wasm',
+    translateOptions: { max_length: 200 },
+    cacheKey: 'opus-mt-ja-en',
+  },
 }

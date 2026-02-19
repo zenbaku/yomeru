@@ -95,9 +95,15 @@ export default defineConfig({
       },
     }),
   ],
+  optimizeDeps: {
+    include: ['@huggingface/transformers'],
+  },
   build: {
     // ONNX Runtime WASM + transformers.js are large by design
     chunkSizeWarningLimit: 1000,
+  },
+  worker: {
+    format: 'es',
   },
   server: {
     host: true,

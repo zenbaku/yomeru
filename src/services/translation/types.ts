@@ -28,3 +28,17 @@ export interface ModelInfo {
   initialize: (onProgress?: (p: number) => void) => Promise<void>
   clearCache: () => Promise<void>
 }
+
+/** Config passed to the translation worker to load a specific neural model. */
+export interface NeuralModelConfig {
+  hfModelId: string
+  dtype: string
+  device: string
+  translateOptions: Record<string, unknown>
+  cacheKey: string
+}
+
+/** Neural model entry with worker config for the registry. */
+export interface NeuralModelInfo extends ModelInfo {
+  workerConfig: NeuralModelConfig
+}
