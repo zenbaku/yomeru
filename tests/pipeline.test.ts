@@ -8,6 +8,7 @@ import {
   filterOverlapping,
   mergeAdjacentLines,
   filterOCRLines,
+  stripNonJapanese,
 } from '@/services/ocr/filters.ts'
 import type { OCRLine } from '@/services/ocr/types.ts'
 import { segment } from '@/services/translation/segmenter.ts'
@@ -243,6 +244,41 @@ describe('ocr filters', () => {
         makeLine('遠い二', 85, { x: 10, y: 200, width: 100, height: 20 }),
       ]
       expect(mergeAdjacentLines(lines)).toHaveLength(2)
+    })
+  })
+
+  describe('stripNonJapanese', () => {
+    it('should strip English characters from mixed text', () => {
+      const lines = [
+        makeLine('Exit 非常口 Emergency', 90),
+      ]
+      const result = stripNonJapanese(lines)
+      expect(result).toHaveLength(1)
+      expect(result[0].text).toBe('非常口')
+    })
+
+    it('should keep pure Japanese text unchanged', () => {
+      const lines = [makeLine('日本語テスト', 90)]
+      const result = stripNonJapanese(lines)
+      expect(result[0].text).toBe('日本語テスト')
+    })
+
+    it('should drop lines that become empty after stripping', () => {
+      const lines = [makeLine('Hello World', 90)]
+      const result = stripNonJapanese(lines)
+      expect(result).toHaveLength(0)
+    })
+
+    it('should keep katakana and hiragana', () => {
+      const lines = [makeLine('カタカナ ひらがな ABC', 90)]
+      const result = stripNonJapanese(lines)
+      expect(result[0].text).toBe('カタカナひらがな')
+    })
+
+    it('should keep CJK punctuation', () => {
+      const lines = [makeLine('「日本語」。', 90)]
+      const result = stripNonJapanese(lines)
+      expect(result[0].text).toBe('「日本語」。')
     })
   })
 

@@ -1,11 +1,12 @@
 import { useState, useCallback, useRef } from 'react'
-import { runPipeline, INITIAL_STATE, type PipelineState } from '../services/pipeline.ts'
+import { runPipeline, INITIAL_STATE, type PipelineState, type PipelineOptions } from '../services/pipeline.ts'
 
 export function usePipeline() {
   const [state, setState] = useState<PipelineState>(INITIAL_STATE)
+  const [ocrOnly, setOcrOnly] = useState(false)
   const runningRef = useRef(false)
 
-  const scan = useCallback(async (frame: ImageData) => {
+  const scan = useCallback(async (frame: ImageData, options?: PipelineOptions) => {
     if (runningRef.current) return
     runningRef.current = true
 
@@ -14,7 +15,7 @@ export function usePipeline() {
 
     await runPipeline(frame, (newState) => {
       setState(newState)
-    })
+    }, options)
 
     runningRef.current = false
   }, [])
@@ -23,5 +24,5 @@ export function usePipeline() {
     setState(INITIAL_STATE)
   }, [])
 
-  return { ...state, scan, reset, scanning: state.phase !== 'idle' && state.phase !== 'done' && state.phase !== 'error' }
+  return { ...state, scan, reset, ocrOnly, setOcrOnly, scanning: state.phase !== 'idle' && state.phase !== 'done' && state.phase !== 'error' }
 }

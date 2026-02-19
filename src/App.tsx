@@ -14,8 +14,8 @@ function App() {
   const pipeline = usePipeline()
 
   const handleCapture = useCallback((frame: ImageData) => {
-    pipeline.scan(frame)
-  }, [pipeline.scan])
+    pipeline.scan(frame, { ocrOnly: pipeline.ocrOnly })
+  }, [pipeline.scan, pipeline.ocrOnly])
 
   if (!ready) {
     return <Onboarding onReady={() => setReady(true)} />
@@ -57,6 +57,8 @@ function App() {
         ocrText={pipeline.ocrResult?.fullText ?? null}
         translations={pipeline.translations}
         error={pipeline.error}
+        ocrOnly={pipeline.ocrOnly}
+        onOcrOnlyChange={pipeline.setOcrOnly}
         onSettings={() => setScreen('models')}
         onReset={pipeline.reset}
       />

@@ -18,6 +18,10 @@ const KANJI_RE = /[\u4e00-\u9faf\u3400-\u4dbf]/
 const KANA_RE = /[\u3040-\u309f\u30a0-\u30ff]/g
 const JUNK_RE = /^[\s\p{P}\p{S}\d\x00-\x7f]+$/u
 
+// Matches Japanese characters: kanji, hiragana, katakana, CJK punctuation,
+// fullwidth digits/letters, and the prolonged sound mark
+const JAPANESE_CHAR_RE = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf\u3400-\u4dbf\uff00-\uffef\u30fc]/g
+
 /** Returns true if the text contains meaningful Japanese content */
 function hasJapaneseContent(text: string): boolean {
   // Keep if it has at least one kanji
@@ -144,6 +148,16 @@ export function mergeAdjacentLines(lines: OCRLine[], maxGap = 10, minHOverlap = 
   return merged
 }
 
+// --- Strip non-Japanese characters ---
+
+export function stripNonJapanese(lines: OCRLine[]): OCRLine[] {
+  return lines.map((l) => {
+    const japaneseOnly = (l.text.match(JAPANESE_CHAR_RE) ?? []).join('')
+    if (japaneseOnly.length === 0) return null
+    return { ...l, text: japaneseOnly }
+  }).filter((l): l is OCRLine => l !== null)
+}
+
 // --- Combined filter pipeline ---
 
 export function filterOCRLines(lines: OCRLine[]): OCRLine[] {
@@ -152,5 +166,6 @@ export function filterOCRLines(lines: OCRLine[]): OCRLine[] {
   filtered = filterBySize(filtered)
   filtered = filterOverlapping(filtered)
   filtered = mergeAdjacentLines(filtered)
+  filtered = stripNonJapanese(filtered)
   return filtered
 }
