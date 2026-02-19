@@ -51,10 +51,7 @@ export function preprocessFrame(
   }
 
   // Step 3: Optional Gaussian blur (3x3 kernel)
-  let blurred = gray
-  if (opts.blur) {
-    blurred = gaussianBlur3x3(gray, width, height)
-  }
+  const blurred = opts.blur ? gaussianBlur3x3(gray, width, height) : gray
 
   // Step 4: Adaptive thresholding (mean-based)
   const binary = adaptiveThreshold(blurred, width, height, opts.adaptiveBlockSize, opts.adaptiveC)
