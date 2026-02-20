@@ -2,13 +2,6 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { runPipeline, INITIAL_STATE, type PipelineState, type PipelineOptions } from '../services/pipeline.ts'
 import { getDefaultOCRModel } from '../services/ocr/registry.ts'
 
-/**
- * Release WASM models after this many ms of inactivity to free memory.
- * Shortened from 2 minutes: ONNX WASM + model weights can consume 30-60MB,
- * which combined with the live camera stream causes OOM on mobile devices.
- */
-const IDLE_TIMEOUT_MS = 45_000 // 45 seconds
-
 /** Maximum time a scan can run before we force-abort with an error. */
 const SCAN_TIMEOUT_MS = 90_000 // 90 seconds
 
@@ -16,51 +9,33 @@ export function usePipeline() {
   const [state, setState] = useState<PipelineState>(INITIAL_STATE)
   const [ocrOnly, setOcrOnly] = useState(false)
   const runningRef = useRef(false)
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  function resetIdleTimer() {
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-    idleTimerRef.current = setTimeout(async () => {
-      // Only terminate if not currently running a scan
-      if (!runningRef.current) {
-        try {
-          await getDefaultOCRModel().terminate()
-        } catch {
-          // Best-effort — swallow errors from ONNX cleanup
-        }
-      }
-    }, IDLE_TIMEOUT_MS)
-  }
-
-  // Release WASM models immediately when the app is backgrounded.
-  // On mobile, the OS will kill the tab if it uses too much memory while hidden.
+  // Release WASM models when the app is backgrounded to prevent OOM kills.
   //
-  // Also start the idle timer on mount: the OCR model may have been
-  // initialized during onboarding and would otherwise sit in WASM memory
-  // (30-60 MB) indefinitely, since the idle timer was previously only
-  // started after a scan completed.
+  // IMPORTANT: We intentionally do NOT terminate on an idle timer.
+  // The @gutenye/ocr-browser library hides its ONNX InferenceSession
+  // objects behind #private fields, so we cannot call session.release().
+  // Without release(), the ONNX thread pool workers (SharedArrayBuffer)
+  // are orphaned on every terminate() call, permanently leaking 30-60 MB
+  // of WASM memory that the GC can never reclaim.  Repeated idle-timer
+  // termination therefore causes unbounded memory growth and eventual OOM.
+  //
+  // Keeping the model alive uses a fixed ~30-60 MB while the app is
+  // foregrounded — stable and predictable.  We only terminate when the
+  // app is backgrounded (where the OS may reclaim the process anyway)
+  // or on unmount.
   useEffect(() => {
-    // Start idle timer immediately — if the OCR model was loaded during
-    // onboarding, this ensures it gets released after IDLE_TIMEOUT_MS
-    // even if the user never scans.
-    resetIdleTimer()
-
     function handleVisibilityChange() {
       if (document.hidden && !runningRef.current) {
-        if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
         getDefaultOCRModel().terminate().catch(() => {})
-      } else if (!document.hidden) {
-        // App foregrounded — restart idle timer (model will be lazy-loaded on next scan)
-        resetIdleTimer()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-      // Release OCR model on unmount to prevent leaked WASM memory
+      // Release OCR model on unmount
       getDefaultOCRModel().terminate().catch(() => {})
     }
   }, [])
@@ -68,9 +43,6 @@ export function usePipeline() {
   const scan = useCallback(async (frame: ImageData, options?: PipelineOptions) => {
     if (runningRef.current) return
     runningRef.current = true
-
-    // Cancel pending idle cleanup — we're actively using the models
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
 
     // Clear previous results immediately
     setState({ ...INITIAL_STATE, phase: 'preprocessing', imageSize: { width: frame.width, height: frame.height } })
@@ -100,8 +72,6 @@ export function usePipeline() {
       clearTimeout(timer)
       abortRef.current = null
       runningRef.current = false
-      // Start idle timer after scan completes
-      resetIdleTimer()
     }
   }, [])
 

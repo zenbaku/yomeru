@@ -206,19 +206,13 @@ export const paddleOCR: OCRModel = {
   },
 
   async terminate() {
-    if (ocrInstance) {
-      // The @gutenye/ocr-browser library doesn't expose a public dispose()
-      // method.  Try known cleanup methods on the instance and its internal
-      // ONNX sessions so we actually free WASM linear memory (30-60 MB)
-      // rather than relying on GC, which rarely reclaims WASM memory.
-      try {
-        if (typeof ocrInstance.dispose === 'function') await ocrInstance.dispose()
-        else if (typeof ocrInstance.release === 'function') await ocrInstance.release()
-        else if (typeof ocrInstance.end === 'function') await ocrInstance.end()
-      } catch {
-        // Best-effort — if cleanup fails, we still drop the reference
-      }
-    }
+    // NOTE: The @gutenye/ocr-browser Ocr class stores its ONNX
+    // InferenceSession objects in #private fields.  We cannot call
+    // session.release(), so the ONNX thread-pool workers
+    // (SharedArrayBuffer) will be orphaned and the WASM linear memory
+    // leaked until the page is unloaded.  Because of this, callers
+    // should minimise how often terminate() is invoked — ideally only
+    // when the app is backgrounded or unmounted.
     ocrInstance = null
     initPromise = null
     if (recognizeCanvas) {
