@@ -42,6 +42,11 @@ const TOTAL_SIZE = MODEL_FILES.det.size + MODEL_FILES.rec.size + MODEL_FILES.dic
 let ocrInstance: any = null
 let initPromise: Promise<void> | null = null
 
+// Reuse a single canvas for recognize() to avoid leaking GPU-backed surfaces.
+// Creating a new canvas per frame causes GPU memory fragmentation on mobile,
+// eventually leading to OOM crashes.
+let recognizeCanvas: HTMLCanvasElement | null = null
+
 /** Convert a cached response to an object URL that the OCR library can fetch. */
 async function cachedResponseToURL(url: string): Promise<string> {
   const cache = await caches.open(CACHE_NAME)
@@ -115,6 +120,11 @@ export const paddleOCR: OCRModel = {
             INIT_TIMEOUT_MS,
             'OCR model initialization timed out — the ONNX runtime may have stalled. Try reloading the page.',
           )
+        } catch (err) {
+          // Ensure ocrInstance is null on timeout or any init failure so
+          // subsequent initialize() calls retry instead of assuming success
+          ocrInstance = null
+          throw err
         } finally {
           URL.revokeObjectURL(detUrl)
           URL.revokeObjectURL(recUrl)
@@ -133,18 +143,20 @@ export const paddleOCR: OCRModel = {
       throw new Error('PaddleOCR not initialized. Call initialize() first.')
     }
 
-    // Convert ImageData to a blob URL — the library only accepts URL strings
-    const canvas = document.createElement('canvas')
-    canvas.width = image.width
-    canvas.height = image.height
-    const ctx = canvas.getContext('2d')!
+    // Reuse a single offscreen canvas to avoid leaking GPU-backed surfaces
+    if (!recognizeCanvas) {
+      recognizeCanvas = document.createElement('canvas')
+    }
+    recognizeCanvas.width = image.width
+    recognizeCanvas.height = image.height
+    const ctx = recognizeCanvas.getContext('2d')!
     ctx.putImageData(image, 0, 0)
 
     const blobUrl = await new Promise<string>((resolve, reject) => {
-      canvas.toBlob((blob) => {
+      recognizeCanvas!.toBlob((blob) => {
         if (!blob) return reject(new Error('Failed to create image blob'))
         resolve(URL.createObjectURL(blob))
-      }, 'image/png')
+      }, 'image/jpeg', 0.90)
     })
 
     try {
@@ -185,16 +197,20 @@ export const paddleOCR: OCRModel = {
       return { lines, fullText }
     } finally {
       URL.revokeObjectURL(blobUrl)
-      canvas.width = 0
-      canvas.height = 0
+      // Release canvas backing store while idle to free GPU memory
+      if (recognizeCanvas) {
+        recognizeCanvas.width = 0
+        recognizeCanvas.height = 0
+      }
     }
   },
 
   async terminate() {
-    if (ocrInstance) {
-      // The library doesn't expose a dispose method on the instance,
-      // but nulling the reference allows GC to collect ONNX sessions
-      ocrInstance = null
+    ocrInstance = null
+    if (recognizeCanvas) {
+      recognizeCanvas.width = 0
+      recognizeCanvas.height = 0
+      recognizeCanvas = null
     }
   },
 

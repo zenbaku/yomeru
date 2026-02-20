@@ -2,11 +2,27 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 
 export type CameraStatus = 'idle' | 'starting' | 'active' | 'denied' | 'error'
 
+/**
+ * Choose camera resolution based on device memory.
+ * High-res frames (1920x1080 = ~8MB ImageData) cause OOM on low-end devices
+ * because the pipeline creates multiple copies during processing.
+ */
+function getCameraConstraints(): MediaTrackConstraints {
+  const mem = (navigator as any).deviceMemory as number | undefined
+  // Low-memory devices (≤2GB): use 720p to keep frame buffers manageable
+  if (mem !== undefined && mem <= 2) {
+    return { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+  }
+  return { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+}
+
 export function useCamera() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [status, setStatus] = useState<CameraStatus>('idle')
+  // Track whether the camera was active before being paused by visibility change
+  const wasActiveRef = useRef(false)
 
   const start = useCallback(async () => {
     if (streamRef.current) return
@@ -29,11 +45,7 @@ export function useCamera() {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
+        video: getCameraConstraints(),
         audio: false,
       })
       streamRef.current = stream
@@ -96,6 +108,39 @@ export function useCamera() {
       return null
     }
   }, [])
+
+  // Pause camera when the app is backgrounded to prevent OS from killing the process.
+  // Mobile browsers aggressively reclaim resources from background tabs, and keeping
+  // the camera stream alive while hidden is the #1 cause of tab/app crashes.
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.hidden) {
+        // App backgrounded — release the camera stream to free memory
+        if (streamRef.current) {
+          wasActiveRef.current = true
+          streamRef.current.getTracks().forEach((t) => t.stop())
+          streamRef.current = null
+          if (videoRef.current) {
+            videoRef.current.srcObject = null
+          }
+          // Release canvas backing store too
+          if (canvasRef.current) {
+            canvasRef.current.width = 0
+            canvasRef.current.height = 0
+          }
+        }
+      } else {
+        // App foregrounded — restart camera if it was active before
+        if (wasActiveRef.current) {
+          wasActiveRef.current = false
+          start()
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [start])
 
   // Listen for permission changes (e.g., user revokes via browser settings)
   useEffect(() => {

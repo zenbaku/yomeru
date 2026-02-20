@@ -214,12 +214,28 @@ export function useNeuralTranslator(modelId?: string) {
     }))
   }, [])
 
-  // Cleanup on unmount
+  // Terminate worker when the app is backgrounded to free WASM memory.
+  // The neural translation model can consume 40-100MB; keeping it alive
+  // while the tab is hidden is a primary cause of OOM kills on mobile.
   useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.hidden && workerRef.current && !state.isTranslating) {
+        workerRef.current.terminate()
+        workerRef.current = null
+        setState((s) => ({
+          ...s,
+          isModelLoaded: false,
+          isModelLoading: false,
+        }))
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       workerRef.current?.terminate()
     }
-  }, [])
+  }, [state.isTranslating])
 
   return {
     ...state,
