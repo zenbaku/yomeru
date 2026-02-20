@@ -17,6 +17,11 @@ function describeError(err: unknown): string {
   return 'An unexpected error occurred. Please try again.'
 }
 
+function isLowMemoryDevice(): boolean {
+  const mem = (navigator as { deviceMemory?: number }).deviceMemory
+  return mem !== undefined && mem <= 2
+}
+
 interface ModelManagerProps {
   onBack: () => void
   neural: ReturnType<typeof useNeuralTranslator>
@@ -229,6 +234,21 @@ function NeuralCard({
       <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>
         {model.description}
       </p>
+
+      {isLowMemoryDevice() && model.size > 100_000_000 && (
+        <p style={{
+          fontSize: 12,
+          color: '#ffa726',
+          marginTop: 6,
+          lineHeight: 1.4,
+          background: 'rgba(255, 167, 38, 0.08)',
+          padding: '6px 10px',
+          borderRadius: 6,
+        }}>
+          Your device has limited memory. This model may cause the app to crash or slow down.
+          Opus-MT is recommended for this device.
+        </p>
+      )}
 
       {busy && progress > 0 && (
         <div style={{

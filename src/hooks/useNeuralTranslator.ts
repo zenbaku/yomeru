@@ -18,11 +18,19 @@ function resolveModel(modelId?: string): NeuralModelInfo {
   return getSelectedNeuralModel()
 }
 
+/**
+ * Terminate the neural worker after this many ms of inactivity to free WASM
+ * memory.  The OCR pipeline uses 45 s; we use a longer window here because
+ * re-initialising the neural model is more expensive than re-loading OCR.
+ */
+const IDLE_TIMEOUT_MS = 120_000 // 2 minutes
+
 export function useNeuralTranslator(modelId?: string) {
   const modelRef = useRef<NeuralModelInfo>(resolveModel(modelId))
   const workerRef = useRef<Worker | null>(null)
   const onPartialRef = useRef<PartialCallback | null>(null)
   const onDoneRef = useRef<DoneCallback | null>(null)
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingRef = useRef<{
     lines: { index: number; japanese: string }[]
     onPartial?: PartialCallback
@@ -80,12 +88,49 @@ export function useNeuralTranslator(modelId?: string) {
     }
   }
 
+  function clearIdleTimer() {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = null
+    }
+  }
+
+  function resetIdleTimer() {
+    clearIdleTimer()
+    idleTimerRef.current = setTimeout(() => {
+      if (workerRef.current) {
+        workerRef.current.terminate()
+        workerRef.current = null
+        setState((s) => ({
+          ...s,
+          isModelLoaded: false,
+          isModelLoading: false,
+        }))
+      }
+    }, IDLE_TIMEOUT_MS)
+  }
+
   function getOrCreateWorker(): Worker {
     if (!workerRef.current) {
       const worker = new Worker(
         new URL('../workers/translation-worker.ts', import.meta.url),
         { type: 'module' },
       )
+
+      // Handle unexpected worker crashes (OOM, WASM abort, etc.)
+      worker.onerror = () => {
+        workerRef.current = null
+        pendingRef.current = null
+        onPartialRef.current = null
+        onDoneRef.current = null
+        clearIdleTimer()
+        setState((s) => ({
+          ...s,
+          isModelLoaded: false,
+          isModelLoading: false,
+          isTranslating: false,
+        }))
+      }
 
       worker.onmessage = (event) => {
         const { type, payload } = event.data
@@ -119,6 +164,8 @@ export function useNeuralTranslator(modelId?: string) {
                 payload: { lines },
                 id: crypto.randomUUID(),
               })
+            } else {
+              resetIdleTimer()
             }
             break
 
@@ -139,6 +186,7 @@ export function useNeuralTranslator(modelId?: string) {
             setState((s) => ({ ...s, isTranslating: false }))
             onPartialRef.current = null
             onDoneRef.current = null
+            resetIdleTimer()
             break
 
           case 'translate-result':
@@ -146,6 +194,7 @@ export function useNeuralTranslator(modelId?: string) {
               setState((s) => ({ ...s, isTranslating: false }))
               onPartialRef.current = null
               onDoneRef.current = null
+              resetIdleTimer()
             }
             break
         }
@@ -202,6 +251,7 @@ export function useNeuralTranslator(modelId?: string) {
 
   /** Terminate the worker to free memory */
   const terminate = useCallback(() => {
+    clearIdleTimer()
     if (workerRef.current) {
       workerRef.current.terminate()
       workerRef.current = null
@@ -220,6 +270,7 @@ export function useNeuralTranslator(modelId?: string) {
   useEffect(() => {
     function handleVisibilityChange() {
       if (document.hidden && workerRef.current && !state.isTranslating) {
+        clearIdleTimer()
         workerRef.current.terminate()
         workerRef.current = null
         setState((s) => ({
@@ -233,6 +284,7 @@ export function useNeuralTranslator(modelId?: string) {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      clearIdleTimer()
       workerRef.current?.terminate()
     }
   }, [state.isTranslating])
