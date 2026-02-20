@@ -45,6 +45,12 @@ export function useNeuralTranslator(modelId?: string) {
     isTranslating: false,
   })
 
+  // Keep a ref of the latest state so callbacks don't close over stale values.
+  // Without this, translateLines may see an old isModelLoaded=false after the
+  // worker has already sent 'ready', silently dropping translation requests.
+  const stateRef = useRef(state)
+  stateRef.current = state
+
   // When modelId changes, resolve new model, terminate old worker, reset state
   useEffect(() => {
     const model = resolveModel(modelId)
@@ -219,6 +225,9 @@ export function useNeuralTranslator(modelId?: string) {
    * If model is loaded, sends immediately.
    * If model is downloaded but not loaded, queues request and starts loading.
    * If model is not downloaded, does nothing.
+   *
+   * Reads from stateRef instead of closing over state to avoid stale-closure
+   * bugs where the callback sees outdated isModelLoaded/isModelDownloaded.
    */
   const translateLines = useCallback(
     (
@@ -226,7 +235,9 @@ export function useNeuralTranslator(modelId?: string) {
       onPartial?: PartialCallback,
       onDone?: DoneCallback,
     ) => {
-      if (state.isModelLoaded) {
+      const { isModelLoaded, isModelDownloaded, isModelLoading } = stateRef.current
+
+      if (isModelLoaded) {
         onPartialRef.current = onPartial ?? null
         onDoneRef.current = onDone ?? null
         setState((s) => ({ ...s, isTranslating: true }))
@@ -235,7 +246,7 @@ export function useNeuralTranslator(modelId?: string) {
           payload: { lines },
           id: crypto.randomUUID(),
         })
-      } else if (state.isModelDownloaded && !state.isModelLoading) {
+      } else if (isModelDownloaded && !isModelLoading) {
         // Queue the request and init the model
         pendingRef.current = { lines, onPartial, onDone }
         setState((s) => ({ ...s, isModelLoading: true }))
@@ -246,7 +257,7 @@ export function useNeuralTranslator(modelId?: string) {
       }
       // If not downloaded, do nothing — dictionary-only mode
     },
-    [state.isModelLoaded, state.isModelDownloaded, state.isModelLoading],
+    [],
   )
 
   /** Terminate the worker to free memory */

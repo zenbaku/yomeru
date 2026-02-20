@@ -53,11 +53,36 @@ registerRoute(
   }),
 )
 
+// Known cache names managed by this service worker.
+// On activation, delete any caches not in this set to prevent unbounded
+// storage growth (e.g. renamed caches from older versions of the app).
+const MANAGED_CACHES = new Set([
+  'tesseract-assets',
+  'dictionary-data',
+  'hf-models',
+  'wasm-runtime',
+  'static-assets',
+  'transformers-cache',
+  'paddleocr-models',
+])
+
 // Activate immediately
 self.addEventListener('install', () => {
   self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim())
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      // Clean up orphaned caches from previous app versions
+      caches.keys().then((names) =>
+        Promise.all(
+          names
+            .filter((name) => !MANAGED_CACHES.has(name) && !name.startsWith('workbox-'))
+            .map((name) => caches.delete(name)),
+        ),
+      ),
+    ]),
+  )
 })

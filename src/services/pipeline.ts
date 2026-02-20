@@ -34,15 +34,26 @@ export const INITIAL_STATE: PipelineState = {
 
 export interface PipelineOptions {
   ocrOnly?: boolean
+  /** When aborted, the pipeline stops between phases and throws. */
+  signal?: AbortSignal
 }
 
 export type StateListener = (state: PipelineState) => void
+
+/** Check the signal and throw if the pipeline has been cancelled. */
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException('Pipeline aborted', 'AbortError')
+  }
+}
 
 export async function runPipeline(
   frame: ImageData,
   onState: StateListener,
   options?: PipelineOptions,
 ): Promise<void> {
+  const signal = options?.signal
+
   let state: PipelineState = {
     ...INITIAL_STATE,
     phase: 'preprocessing',
@@ -51,6 +62,8 @@ export async function runPipeline(
   onState(state)
 
   try {
+    throwIfAborted(signal)
+
     const ocrModel = getDefaultOCRModel()
 
     // Preprocessing phase — skip for PaddleOCR (its detection model handles scene text natively)
@@ -65,6 +78,7 @@ export async function runPipeline(
     }
 
     // OCR phase
+    throwIfAborted(signal)
     state = { ...state, phase: 'ocr' }
     onState(state)
 
@@ -74,12 +88,16 @@ export async function runPipeline(
       throw new Error(`OCR model failed to load: ${err instanceof Error ? err.message : 'unknown error'}`)
     }
 
+    throwIfAborted(signal)
+
     let rawResult: OCRResult
     try {
       rawResult = await ocrModel.recognize(processed)
     } catch (err) {
       throw new Error(`Text recognition failed: ${err instanceof Error ? err.message : 'unknown error'}`)
     }
+
+    throwIfAborted(signal)
 
     // Filter OCR lines (confidence, content, size, overlap, merge)
     const filteredLines = filterOCRLines(rawResult.lines)
@@ -98,6 +116,7 @@ export async function runPipeline(
     }
 
     // Segmentation + Dictionary phase (instant)
+    throwIfAborted(signal)
     state = { ...state, phase: 'segmenting' }
     onState(state)
 
@@ -108,12 +127,14 @@ export async function runPipeline(
       throw new Error(`Translation model failed to load: ${err instanceof Error ? err.message : 'unknown error'}`)
     }
 
+    throwIfAborted(signal)
     state = { ...state, phase: 'translating' }
     onState(state)
 
     // Translate each line independently for per-line dictionary results
     const translations: TranslationResult[][] = []
     for (const line of ocrResult.lines) {
+      throwIfAborted(signal)
       try {
         const lineTranslations = await translationModel.translate(line.text)
         translations.push(lineTranslations)
@@ -127,6 +148,9 @@ export async function runPipeline(
     state = { ...state, phase: 'done', translations }
     onState(state)
   } catch (err) {
+    // Don't report abort as an error — it's an intentional cancellation
+    if (err instanceof DOMException && err.name === 'AbortError') return
+
     state = {
       ...state,
       phase: 'error',

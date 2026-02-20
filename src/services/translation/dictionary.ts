@@ -3,7 +3,7 @@ import { segment } from './segmenter.ts'
 import {
   isDictionaryLoaded,
   loadDictionaryFromJSON,
-  lookupWord,
+  lookupWords,
   clearDictionary,
 } from '../storage/indexeddb.ts'
 
@@ -26,32 +26,31 @@ export const jmdictModel: TranslationModel = {
 
   async translate(text: string): Promise<TranslationResult[]> {
     const segments = segment(text)
-    const results: TranslationResult[] = []
 
-    for (const seg of segments) {
-      const entries = await lookupWord(seg)
+    // Batch all lookups into a single IndexedDB transaction instead of
+    // one transaction per segment. On mobile this reduces IDB overhead
+    // from ~2-5ms × N segments to a single ~2-5ms round-trip.
+    const uniqueKeys = [...new Set(segments)]
+    const lookupMap = await lookupWords(uniqueKeys)
 
+    return segments.map((seg) => {
+      const entries = lookupMap.get(seg)
       if (entries && entries.length > 0) {
-        // Use first (most relevant) entry
         const [word, reading, glossStr, pos] = entries[0]
-        results.push({
+        return {
           original: word,
           reading: reading || '',
           translations: glossStr.split('; '),
           partOfSpeech: pos,
-        })
-      } else {
-        // No dictionary match — show the segment as-is
-        results.push({
-          original: seg,
-          reading: '',
-          translations: [],
-          partOfSpeech: '',
-        })
+        }
       }
-    }
-
-    return results
+      return {
+        original: seg,
+        reading: '',
+        translations: [],
+        partOfSpeech: '',
+      }
+    })
   },
 
   async terminate() {
