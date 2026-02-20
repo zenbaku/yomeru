@@ -32,9 +32,6 @@ pnpm-debug.log*
 Thumbs.db
 .vercel
 
-# ONNX Runtime WASM files (copied from node_modules during setup)
-public/ort-wasm/
-
 # Coverage reports
 coverage/
 

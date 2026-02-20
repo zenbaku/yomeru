@@ -1,23 +1,25 @@
 import { defineConfig, type Plugin } from 'vite'
 import { resolve, basename } from 'node:path'
-import { existsSync, createReadStream, statSync } from 'node:fs'
+import { existsSync, readFileSync, createReadStream, statSync } from 'node:fs'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 /**
- * Serve ONNX Runtime WASM & module files from node_modules during development.
+ * Handle ONNX Runtime WASM & module files for both dev and production.
  *
  * onnxruntime-web constructs URLs for its .wasm binary and .mjs module loader
- * relative to the bundled JS module.  In Vite's dev server the inferred URLs
- * don't map to real files, so requests 404 (returning HTML).  This plugin
- * intercepts any request whose filename matches `ort-wasm*.(wasm|mjs)` and
- * serves the real file from the nested node_modules directory.
+ * relative to the bundled JS module (via import.meta.url).  In development the
+ * inferred URLs don't map to real files, so we intercept and serve them from
+ * node_modules.  In production builds we emit them into the assets directory
+ * so they sit next to the bundled JS chunks where onnxruntime-web expects them.
  */
-function serveOnnxWasm(): Plugin {
+function onnxWasmPlugin(): Plugin {
   const wasmDir = resolve(
     import.meta.dirname,
     'node_modules/@gutenye/ocr-browser/node_modules/onnxruntime-web/dist',
   )
+
+  const wasmFiles = ['ort-wasm-simd-threaded.wasm', 'ort-wasm-simd-threaded.mjs']
 
   const contentTypes: Record<string, string> = {
     '.wasm': 'application/wasm',
@@ -25,7 +27,9 @@ function serveOnnxWasm(): Plugin {
   }
 
   return {
-    name: 'serve-onnx-wasm',
+    name: 'onnx-wasm',
+
+    // Dev: intercept requests and serve from node_modules
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = req.url ?? ''
@@ -46,6 +50,21 @@ function serveOnnxWasm(): Plugin {
         next()
       })
     },
+
+    // Build: emit .wasm and .mjs into the assets directory so they are
+    // co-located with the JS chunks that reference them via import.meta.url.
+    generateBundle() {
+      for (const file of wasmFiles) {
+        const filePath = resolve(wasmDir, file)
+        if (existsSync(filePath)) {
+          this.emitFile({
+            type: 'asset',
+            fileName: `assets/${file}`,
+            source: readFileSync(filePath),
+          })
+        }
+      }
+    },
   }
 }
 
@@ -54,7 +73,7 @@ export default defineConfig({
     __BUILD_TIMESTAMP__: JSON.stringify(new Date().toISOString()),
   },
   plugins: [
-    serveOnnxWasm(),
+    onnxWasmPlugin(),
     react(),
     VitePWA({
       strategies: 'injectManifest',
