@@ -3,17 +3,38 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 export type CameraStatus = 'idle' | 'starting' | 'active' | 'denied' | 'error'
 
 /**
- * Choose camera resolution based on device memory.
- * High-res frames (1920x1080 = ~8MB ImageData) cause OOM on low-end devices
- * because the pipeline creates multiple copies during processing.
+ * Choose camera resolution and frame rate based on device memory.
+ *
+ * IMPORTANT: navigator.deviceMemory is only available in Chromium browsers.
+ * iOS Safari and Firefox always return undefined — so the old code that only
+ * branched on `mem <= 2` was silently giving ALL iPhones and Firefox users
+ * 1080p with no frame rate cap, causing OOM kills during idle camera preview.
+ *
+ * We now default to 720p + capped frame rate unless the device explicitly
+ * reports ample memory (≥4 GB).  720p is sufficient for OCR and halves the
+ * per-frame memory vs 1080p (~3.7 MB vs ~8.3 MB).
  */
 function getCameraConstraints(): MediaTrackConstraints {
-  const mem = (navigator as any).deviceMemory as number | undefined
-  // Low-memory devices (≤2GB): use 720p to keep frame buffers manageable
-  if (mem !== undefined && mem <= 2) {
-    return { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+  const mem = (navigator as { deviceMemory?: number }).deviceMemory
+
+  // Only upgrade to 1080p when the device explicitly reports ample memory.
+  if (mem !== undefined && mem >= 4) {
+    return {
+      facingMode: 'environment',
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      frameRate: { ideal: 20, max: 30 },
+    }
   }
-  return { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+
+  // Default: 720p + capped frame rate.
+  // Covers iOS (no deviceMemory API), Firefox, and low-memory Chromium.
+  return {
+    facingMode: 'environment',
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    frameRate: { ideal: 20, max: 24 },
+  }
 }
 
 export function useCamera() {
@@ -103,7 +124,12 @@ export function useCamera() {
     if (!ctx) return null
     ctx.drawImage(video, 0, 0)
     try {
-      return ctx.getImageData(0, 0, w, h)
+      const frame = ctx.getImageData(0, 0, w, h)
+      // Release the GPU-backed canvas buffer immediately — it can be
+      // 3-8 MB and there's no reason to keep it between scans.
+      canvas.width = 0
+      canvas.height = 0
+      return frame
     } catch {
       return null
     }
