@@ -17,6 +17,7 @@ export function usePipeline() {
   const [ocrOnly, setOcrOnly] = useState(false)
   const runningRef = useRef(false)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   function resetIdleTimer() {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
@@ -55,22 +56,20 @@ export function usePipeline() {
     // Clear previous results immediately
     setState({ ...INITIAL_STATE, phase: 'preprocessing', imageSize: { width: frame.width, height: frame.height } })
 
-    try {
-      // Race the pipeline against a timeout so we never leave the UI stuck
-      let timer: ReturnType<typeof setTimeout>
-      const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error('Scan timed out. Try reloading the page and scanning again.')),
-          SCAN_TIMEOUT_MS,
-        )
-      })
+    // AbortController lets us actually stop in-flight pipeline work on timeout,
+    // rather than just ignoring the result while it continues consuming CPU/memory.
+    const abort = new AbortController()
+    abortRef.current = abort
+    const timer = setTimeout(() => abort.abort(), SCAN_TIMEOUT_MS)
 
-      await Promise.race([
-        runPipeline(frame, (newState) => {
-          setState(newState)
-        }, options),
-        timeout,
-      ]).finally(() => clearTimeout(timer!))
+    try {
+      await runPipeline(frame, (newState) => {
+        setState(newState)
+      }, { ...options, signal: abort.signal })
+
+      if (abort.signal.aborted) {
+        throw new Error('Scan timed out. Try reloading the page and scanning again.')
+      }
     } catch (err) {
       console.error('Pipeline failed unexpectedly:', err)
       setState((prev) => ({
@@ -79,6 +78,8 @@ export function usePipeline() {
         error: err instanceof Error ? err.message : 'Unexpected error during scan',
       }))
     } finally {
+      clearTimeout(timer)
+      abortRef.current = null
       runningRef.current = false
       // Start idle timer after scan completes
       resetIdleTimer()
