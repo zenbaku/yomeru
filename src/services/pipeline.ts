@@ -102,7 +102,11 @@ export async function runPipeline(
     onState(state)
 
     const translationModel = getDefaultTranslationModel()
-    await translationModel.initialize()
+    try {
+      await translationModel.initialize()
+    } catch (err) {
+      throw new Error(`Translation model failed to load: ${err instanceof Error ? err.message : 'unknown error'}`)
+    }
 
     state = { ...state, phase: 'translating' }
     onState(state)

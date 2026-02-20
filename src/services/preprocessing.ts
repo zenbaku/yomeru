@@ -87,7 +87,7 @@ export function preprocessFrame(
 
   // Step 3: Optional median filter (3x3) at NATIVE resolution —
   // most effective here because noise is single-pixel at original scale
-  let cur = gray
+  let cur: Uint8Array<ArrayBufferLike> = gray
   if (opts.median) cur = medianFilter3x3(cur, width, height)
 
   // Step 4: Optional bilinear upscale — runs AFTER median (noise removed)
