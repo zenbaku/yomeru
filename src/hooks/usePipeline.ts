@@ -5,6 +5,9 @@ import { getDefaultOCRModel } from '../services/ocr/registry.ts'
 /** Release WASM models after this many ms of inactivity to free memory. */
 const IDLE_TIMEOUT_MS = 2 * 60 * 1000 // 2 minutes
 
+/** Maximum time a scan can run before we force-abort with an error. */
+const SCAN_TIMEOUT_MS = 90_000 // 90 seconds
+
 export function usePipeline() {
   const [state, setState] = useState<PipelineState>(INITIAL_STATE)
   const [ocrOnly, setOcrOnly] = useState(false)
@@ -38,14 +41,34 @@ export function usePipeline() {
     // Clear previous results immediately
     setState({ ...INITIAL_STATE, phase: 'preprocessing', imageSize: { width: frame.width, height: frame.height } })
 
-    await runPipeline(frame, (newState) => {
-      setState(newState)
-    }, options)
+    try {
+      // Race the pipeline against a timeout so we never leave the UI stuck
+      let timer: ReturnType<typeof setTimeout>
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Scan timed out. Try reloading the page and scanning again.')),
+          SCAN_TIMEOUT_MS,
+        )
+      })
 
-    runningRef.current = false
-
-    // Start idle timer after scan completes
-    resetIdleTimer()
+      await Promise.race([
+        runPipeline(frame, (newState) => {
+          setState(newState)
+        }, options),
+        timeout,
+      ]).finally(() => clearTimeout(timer!))
+    } catch (err) {
+      console.error('Pipeline failed unexpectedly:', err)
+      setState((prev) => ({
+        ...prev,
+        phase: 'error',
+        error: err instanceof Error ? err.message : 'Unexpected error during scan',
+      }))
+    } finally {
+      runningRef.current = false
+      // Start idle timer after scan completes
+      resetIdleTimer()
+    }
   }, [])
 
   const reset = useCallback(() => {

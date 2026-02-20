@@ -88,6 +88,15 @@ export function ModelManager({ onBack, neural, onNeuralModelChange }: ModelManag
         Models are cached locally for offline use.
         Delete a model to free storage, then re-download when needed.
       </p>
+      <p style={{
+        color: 'var(--text-secondary)',
+        fontSize: 11,
+        opacity: 0.4,
+        marginTop: 12,
+        textAlign: 'center',
+      }}>
+        Build {__BUILD_TIMESTAMP__.replace('T', ' ').slice(0, 19)}
+      </p>
     </div>
   )
 }

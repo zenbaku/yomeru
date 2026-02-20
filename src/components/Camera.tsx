@@ -18,8 +18,12 @@ export function Camera({ onCapture, scanning }: CameraProps) {
 
   const handleScan = () => {
     if (scanning) return
-    const frame = captureFrame()
-    if (frame) onCapture(frame)
+    try {
+      const frame = captureFrame()
+      if (frame) onCapture(frame)
+    } catch (err) {
+      console.error('Frame capture failed:', err)
+    }
   }
 
   const toggleDebug = useCallback(() => {

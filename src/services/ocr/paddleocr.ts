@@ -3,6 +3,21 @@ import { downloadWithProgress, isCached } from '../storage/model-cache.ts'
 
 const CACHE_NAME = 'paddleocr-models'
 
+/** Timeout for Ocr.create() — ONNX session loading */
+const INIT_TIMEOUT_MS = 60_000
+/** Timeout for ocrInstance.detect() — single inference pass */
+const DETECT_TIMEOUT_MS = 30_000
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms)
+    }),
+  ]).finally(() => clearTimeout(timer))
+}
+
 const MODEL_FILES = {
   det: {
     url: 'https://huggingface.co/monkt/paddleocr-onnx/resolve/main/detection/v5/det.onnx',
@@ -55,7 +70,8 @@ export const paddleOCR: OCRModel = {
   async initialize(onProgress) {
     if (ocrInstance) return
 
-    // Prevent concurrent initialization — all callers share the same promise
+    // Prevent concurrent initialization — all callers share the same promise.
+    // If a previous init is still pending (possibly hung), abandon it and retry.
     if (initPromise) return initPromise
 
     initPromise = (async () => {
@@ -81,13 +97,17 @@ export const paddleOCR: OCRModel = {
 
         try {
           const { default: Ocr } = await import('@gutenye/ocr-browser')
-          ocrInstance = await Ocr.create({
-            models: {
-              detectionPath: detUrl,
-              recognitionPath: recUrl,
-              dictionaryPath: dictUrl,
-            },
-          })
+          ocrInstance = await withTimeout(
+            Ocr.create({
+              models: {
+                detectionPath: detUrl,
+                recognitionPath: recUrl,
+                dictionaryPath: dictUrl,
+              },
+            }),
+            INIT_TIMEOUT_MS,
+            'OCR model initialization timed out — the ONNX runtime may have stalled. Try reloading the page.',
+          )
         } finally {
           URL.revokeObjectURL(detUrl)
           URL.revokeObjectURL(recUrl)
@@ -123,7 +143,11 @@ export const paddleOCR: OCRModel = {
     try {
       // detect() returns Line[] where Line = { text, mean, box? }
       // box is a 4-point polygon: [[x0,y0], [x1,y1], [x2,y2], [x3,y3]]
-      const detectedLines: any[] = await ocrInstance.detect(blobUrl)
+      const detectedLines: any[] = await withTimeout(
+        ocrInstance.detect(blobUrl),
+        DETECT_TIMEOUT_MS,
+        'OCR detection timed out — try scanning a simpler image',
+      )
 
       const lines = (detectedLines ?? [])
         .filter((line: any) => line.text && line.text.length > 0)
