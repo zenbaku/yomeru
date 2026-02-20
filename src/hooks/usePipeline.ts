@@ -2,8 +2,12 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { runPipeline, INITIAL_STATE, type PipelineState, type PipelineOptions } from '../services/pipeline.ts'
 import { getDefaultOCRModel } from '../services/ocr/registry.ts'
 
-/** Release WASM models after this many ms of inactivity to free memory. */
-const IDLE_TIMEOUT_MS = 2 * 60 * 1000 // 2 minutes
+/**
+ * Release WASM models after this many ms of inactivity to free memory.
+ * Shortened from 2 minutes: ONNX WASM + model weights can consume 30-60MB,
+ * which combined with the live camera stream causes OOM on mobile devices.
+ */
+const IDLE_TIMEOUT_MS = 45_000 // 45 seconds
 
 /** Maximum time a scan can run before we force-abort with an error. */
 const SCAN_TIMEOUT_MS = 90_000 // 90 seconds
@@ -24,9 +28,19 @@ export function usePipeline() {
     }, IDLE_TIMEOUT_MS)
   }
 
-  // Clear timer on unmount
+  // Release WASM models immediately when the app is backgrounded.
+  // On mobile, the OS will kill the tab if it uses too much memory while hidden.
   useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.hidden && !runningRef.current) {
+        if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+        getDefaultOCRModel().terminate()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
     }
   }, [])
