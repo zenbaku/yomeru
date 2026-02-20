@@ -31,7 +31,7 @@ export function initializeNLLBModel(
       const { type, payload } = event.data
       switch (type) {
         case 'loading':
-          onProgress?.(payload.progress / 100)
+          onProgress?.(Math.min(payload.progress / 100, 1))
           break
         case 'ready':
           worker.terminate()

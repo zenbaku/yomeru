@@ -40,7 +40,7 @@ export async function initializePhraseModel(
       dtype: 'q8',
       progress_callback: (info: { status: string; progress?: number }) => {
         if (info.status === 'progress' && info.progress != null) {
-          onProgress?.(info.progress / 100)
+          onProgress?.(Math.min(info.progress / 100, 1))
         }
       },
     }) as TranslationPipeline

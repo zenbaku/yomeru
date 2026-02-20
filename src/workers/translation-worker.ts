@@ -82,7 +82,7 @@ async function initModel(config?: NeuralModelConfig) {
             type: 'loading',
             payload: {
               phase: 'loading-model',
-              progress: progress.progress ?? 0,
+              progress: Math.min(progress.progress ?? 0, 100),
               file: progress.file ?? '',
               loaded: progress.loaded ?? 0,
               total: progress.total ?? 0,
