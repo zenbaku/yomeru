@@ -2,11 +2,20 @@ import { useState, useEffect, useCallback } from 'react'
 import { ocrModels } from '../services/ocr/registry.ts'
 import { translationModels } from '../services/translation/registry.ts'
 import { neuralModels, getSelectedNeuralModelId, setSelectedNeuralModelId } from '../services/translation/neural-registry.ts'
+import { DownloadError } from '../services/storage/model-cache.ts'
 import type { NeuralModelInfo } from '../services/translation/types.ts'
 import type { OCRModel } from '../services/ocr/types.ts'
 import type { TranslationModel } from '../services/translation/types.ts'
 import type { ModelInfo } from '../services/translation/types.ts'
 import type { useNeuralTranslator } from '../hooks/useNeuralTranslator.ts'
+
+/** Classify an error into an actionable user-facing message. */
+function describeError(err: unknown): string {
+  if (err instanceof DownloadError) return err.message
+  if (!navigator.onLine) return 'You appear to be offline. Check your connection and try again.'
+  if (err instanceof Error) return err.message
+  return 'An unexpected error occurred. Please try again.'
+}
 
 interface ModelManagerProps {
   onBack: () => void
@@ -130,7 +139,8 @@ function NeuralCard({
   useEffect(() => {
     if (isSelected && neural.isModelLoading) {
       setBusy(true)
-      setProgress(neural.downloadProgress / 100)
+      // Clamp to [0, 1] — downloadProgress is 0-100 but may exceed 100
+      setProgress(Math.min(neural.downloadProgress / 100, 1))
     }
   }, [isSelected, neural.isModelLoading, neural.downloadProgress])
 
@@ -149,11 +159,11 @@ function NeuralCard({
     setError(null)
     setProgress(0)
     try {
-      await model.initialize((p) => setProgress(p))
+      await model.initialize((p) => setProgress(Math.min(p, 1)))
       setDownloaded(true)
       neural.recheckDownloaded()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed')
+      setError(describeError(err))
     } finally {
       setBusy(false)
       setProgress(0)
@@ -169,7 +179,7 @@ function NeuralCard({
       setDownloaded(false)
       neural.recheckDownloaded()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed')
+      setError(describeError(err))
     } finally {
       setBusy(false)
     }
@@ -230,7 +240,7 @@ function NeuralCard({
           overflow: 'hidden',
         }}>
           <div style={{
-            width: `${Math.round(progress * 100)}%`,
+            width: `${Math.min(Math.round(progress * 100), 100)}%`,
             height: '100%',
             background: 'var(--accent)',
             borderRadius: 2,
@@ -240,7 +250,7 @@ function NeuralCard({
       )}
 
       {error && (
-        <p style={{ fontSize: 12, color: 'var(--accent)', marginTop: 8 }}>
+        <p style={{ fontSize: 12, color: 'var(--accent)', marginTop: 8, lineHeight: 1.4 }}>
           {error}
         </p>
       )}
@@ -249,7 +259,7 @@ function NeuralCard({
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           {!downloaded && (
             <ActionButton onClick={handleDownload} disabled={busy}>
-              {busy ? `Downloading ${Math.round(progress * 100)}%` : 'Download'}
+              {busy ? `Downloading ${Math.min(Math.round(progress * 100), 100)}%` : 'Download'}
             </ActionButton>
           )}
           {downloaded && !isSelected && (
@@ -306,10 +316,10 @@ function ModelCard({ model }: { model: AnyModel }) {
     setError(null)
     setProgress(0)
     try {
-      await model.initialize((p) => setProgress(p))
+      await model.initialize((p) => setProgress(Math.min(p, 1)))
       setDownloaded(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed')
+      setError(describeError(err))
     } finally {
       setBusy(false)
       setProgress(0)
@@ -323,7 +333,7 @@ function ModelCard({ model }: { model: AnyModel }) {
       await model.clearCache()
       setDownloaded(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed')
+      setError(describeError(err))
     } finally {
       setBusy(false)
     }
@@ -377,7 +387,7 @@ function ModelCard({ model }: { model: AnyModel }) {
           overflow: 'hidden',
         }}>
           <div style={{
-            width: `${Math.round(progress * 100)}%`,
+            width: `${Math.min(Math.round(progress * 100), 100)}%`,
             height: '100%',
             background: 'var(--accent)',
             borderRadius: 2,
@@ -388,7 +398,7 @@ function ModelCard({ model }: { model: AnyModel }) {
 
       {/* Error message */}
       {error && (
-        <p style={{ fontSize: 12, color: 'var(--accent)', marginTop: 8 }}>
+        <p style={{ fontSize: 12, color: 'var(--accent)', marginTop: 8, lineHeight: 1.4 }}>
           {error}
         </p>
       )}
@@ -398,7 +408,7 @@ function ModelCard({ model }: { model: AnyModel }) {
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           {!downloaded && (
             <ActionButton onClick={handleDownload} disabled={busy}>
-              {busy ? `Downloading ${Math.round(progress * 100)}%` : 'Download'}
+              {busy ? `Downloading ${Math.min(Math.round(progress * 100), 100)}%` : 'Download'}
             </ActionButton>
           )}
           {downloaded && (

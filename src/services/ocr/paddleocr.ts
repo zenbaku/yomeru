@@ -22,17 +22,21 @@ const MODEL_FILES = {
   det: {
     url: 'https://huggingface.co/monkt/paddleocr-onnx/resolve/main/detection/v5/det.onnx',
     size: 3_000_000,
+    label: 'text detection model',
   },
   rec: {
     url: 'https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/chinese/rec.onnx',
     size: 10_000_000,
+    label: 'text recognition model',
   },
   dict: {
     url: 'https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/chinese/dict.txt',
     size: 200_000,
+    label: 'character dictionary',
   },
 } as const
 
+const MODEL_FILE_LIST = [MODEL_FILES.det, MODEL_FILES.rec, MODEL_FILES.dict] as const
 const TOTAL_SIZE = MODEL_FILES.det.size + MODEL_FILES.rec.size + MODEL_FILES.dict.size
 
 let ocrInstance: any = null
@@ -76,16 +80,19 @@ export const paddleOCR: OCRModel = {
 
     initPromise = (async () => {
       try {
-        // Download all model files with combined progress tracking
+        // Download all model files with combined progress tracking.
+        // Use estimated sizes for weighting, but clamp to [0, 1] to guard
+        // against actual file sizes differing from estimates.
         let downloaded = 0
 
-        for (const file of [MODEL_FILES.det, MODEL_FILES.rec, MODEL_FILES.dict]) {
+        for (const file of MODEL_FILE_LIST) {
           const before = downloaded
           await downloadWithProgress(file.url, CACHE_NAME, (loaded, _total) => {
-            onProgress?.((before + loaded) / TOTAL_SIZE)
+            const raw = (before + loaded) / TOTAL_SIZE
+            onProgress?.(Math.min(raw, 1))
           })
           downloaded += file.size
-          onProgress?.(downloaded / TOTAL_SIZE)
+          onProgress?.(Math.min(downloaded / TOTAL_SIZE, 1))
         }
 
         // Create blob URLs from cached files so the OCR library can load them
