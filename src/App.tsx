@@ -115,56 +115,71 @@ function App() {
     return <Onboarding onReady={() => setReady(true)} />
   }
 
-  if (screen === 'models') {
-    return (
-      <ModelManager
-        onBack={handleBackFromModels}
-        neural={neural}
-        onNeuralModelChange={setNeuralModelId}
-      />
-    )
-  }
-
   return (
     <div style={{
-      display: 'flex',
-      flexDirection: 'column',
+      position: 'relative',
       width: '100%',
       height: '100%',
       overflow: 'hidden',
     }}>
-      {/* Camera section */}
+      {/* Camera view (always mounted) */}
       <div style={{
-        flex: '0 0 55vh',
-        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        height: '100%',
         overflow: 'hidden',
       }}>
-        <Camera
-          onCapture={handleCapture}
-          scanning={pipeline.scanning}
-        />
+        {/* Camera section */}
+        <div style={{
+          flex: '0 0 55vh',
+          position: 'relative',
+          overflow: 'hidden',
+        }}>
+          <Camera
+            onCapture={handleCapture}
+            scanning={pipeline.scanning}
+          />
 
-        <TextOverlay
-          ocrResult={pipeline.ocrResult}
-          imageSize={pipeline.imageSize}
-          translated={pipeline.phase === 'done'}
+          <TextOverlay
+            ocrResult={pipeline.ocrResult}
+            imageSize={pipeline.imageSize}
+            translated={pipeline.phase === 'done'}
+          />
+        </div>
+
+        {/* Info panel section */}
+        <InfoPanel
+          phase={pipeline.phase}
+          ocrText={pipeline.ocrResult?.fullText ?? null}
+          translations={pipeline.translations}
+          neuralTranslations={neuralTranslations}
+          isNeuralTranslating={neural.isTranslating}
+          isNeuralAvailable={neural.isModelDownloaded}
+          error={pipeline.error}
+          ocrOnly={pipeline.ocrOnly}
+          onOcrOnlyChange={pipeline.setOcrOnly}
+          onSettings={() => setScreen('models')}
+          onReset={pipeline.reset}
         />
       </div>
 
-      {/* Info panel section */}
-      <InfoPanel
-        phase={pipeline.phase}
-        ocrText={pipeline.ocrResult?.fullText ?? null}
-        translations={pipeline.translations}
-        neuralTranslations={neuralTranslations}
-        isNeuralTranslating={neural.isTranslating}
-        isNeuralAvailable={neural.isModelDownloaded}
-        error={pipeline.error}
-        ocrOnly={pipeline.ocrOnly}
-        onOcrOnlyChange={pipeline.setOcrOnly}
-        onSettings={() => setScreen('models')}
-        onReset={pipeline.reset}
-      />
+      {/* Settings overlay — slides in from right */}
+      {screen === 'models' && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 20,
+          background: 'var(--bg-primary)',
+          animation: 'slideInRight 0.25s ease-out',
+        }}>
+          <ModelManager
+            onBack={handleBackFromModels}
+            neural={neural}
+            onNeuralModelChange={setNeuralModelId}
+          />
+        </div>
+      )}
     </div>
   )
 }
