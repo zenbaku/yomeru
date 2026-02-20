@@ -278,9 +278,14 @@ export function useNeuralTranslator(modelId?: string) {
   // Terminate worker when the app is backgrounded to free WASM memory.
   // The neural translation model can consume 40-100MB; keeping it alive
   // while the tab is hidden is a primary cause of OOM kills on mobile.
+  //
+  // Read isTranslating from stateRef rather than depending on
+  // state.isTranslating — the previous approach tore down and re-added
+  // the listener on every isTranslating change, causing listener churn
+  // and brief windows where no listener was registered.
   useEffect(() => {
     function handleVisibilityChange() {
-      if (document.hidden && workerRef.current && !state.isTranslating) {
+      if (document.hidden && workerRef.current && !stateRef.current.isTranslating) {
         clearIdleTimer()
         workerRef.current.terminate()
         workerRef.current = null
@@ -298,13 +303,17 @@ export function useNeuralTranslator(modelId?: string) {
       clearIdleTimer()
       workerRef.current?.terminate()
     }
-  }, [state.isTranslating])
+  }, [])
+
+  // Stable callback — avoid creating a new closure on every render which
+  // would invalidate useCallback deps in consumers (e.g. App.tsx handleBackFromModels).
+  const recheckDownloaded = useCallback(() => checkDownloaded(), [])
 
   return {
     ...state,
     downloadModel,
     translateLines,
     terminate,
-    recheckDownloaded: () => checkDownloaded(),
+    recheckDownloaded,
   }
 }
