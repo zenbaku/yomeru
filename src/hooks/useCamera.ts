@@ -23,17 +23,19 @@ function getCameraConstraints(): MediaTrackConstraints {
       facingMode: 'environment',
       width: { ideal: 1920 },
       height: { ideal: 1080 },
-      frameRate: { ideal: 20, max: 30 },
+      frameRate: { ideal: 15, max: 24 },
     }
   }
 
   // Default: 720p + capped frame rate.
   // Covers iOS (no deviceMemory API), Firefox, and low-memory Chromium.
+  // 15fps is sufficient for a viewfinder; the user manually triggers scans.
+  // Lower frame rate reduces CPU/GPU load and battery drain while idle.
   return {
     facingMode: 'environment',
     width: { ideal: 1280 },
     height: { ideal: 720 },
-    frameRate: { ideal: 20, max: 24 },
+    frameRate: { ideal: 15, max: 20 },
   }
 }
 
@@ -41,6 +43,7 @@ export function useCamera() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
   const [status, setStatus] = useState<CameraStatus>('idle')
   // Track whether the camera was active before being paused by visibility change
   const wasActiveRef = useRef(false)
@@ -109,27 +112,35 @@ export function useCamera() {
     const video = videoRef.current
     if (!video || video.readyState < 2) return null
 
-    // Reuse a single offscreen canvas to avoid leaking GPU-backed surfaces
+    // Reuse a single offscreen canvas to avoid leaking GPU-backed surfaces.
+    // Also cache the 2D context — getContext() is idempotent but the call
+    // has overhead we can avoid.
     if (!canvasRef.current) {
       canvasRef.current = document.createElement('canvas')
+      ctxRef.current = null
     }
     const canvas = canvasRef.current
     const w = video.videoWidth
     const h = video.videoHeight
     if (w === 0 || h === 0) return null
 
-    canvas.width = w
-    canvas.height = h
-    const ctx = canvas.getContext('2d')
+    // Only resize the canvas when video dimensions change to avoid tearing
+    // down and re-allocating the GPU backing store on every capture.
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w
+      canvas.height = h
+      ctxRef.current = null // context is invalidated on resize
+    }
+
+    if (!ctxRef.current) {
+      ctxRef.current = canvas.getContext('2d')
+    }
+    const ctx = ctxRef.current
     if (!ctx) return null
+
     ctx.drawImage(video, 0, 0)
     try {
-      const frame = ctx.getImageData(0, 0, w, h)
-      // Release the GPU-backed canvas buffer immediately — it can be
-      // 3-8 MB and there's no reason to keep it between scans.
-      canvas.width = 0
-      canvas.height = 0
-      return frame
+      return ctx.getImageData(0, 0, w, h)
     } catch {
       return null
     }
@@ -153,6 +164,7 @@ export function useCamera() {
           if (canvasRef.current) {
             canvasRef.current.width = 0
             canvasRef.current.height = 0
+            ctxRef.current = null
           }
         }
       } else {
@@ -170,27 +182,37 @@ export function useCamera() {
 
   // Listen for permission changes (e.g., user revokes via browser settings)
   useEffect(() => {
+    let permStatus: PermissionStatus | null = null
+
+    function handlePermissionChange() {
+      if (!permStatus) return
+      if (permStatus.state === 'denied') {
+        // Stop stream and update status
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop())
+          streamRef.current = null
+        }
+        setStatus('denied')
+      } else if (permStatus.state === 'granted' && !streamRef.current) {
+        // Permission re-granted — restart camera automatically
+        start()
+      }
+    }
+
     if (navigator.permissions) {
       navigator.permissions.query({ name: 'camera' as PermissionName }).then((perm) => {
-        perm.addEventListener('change', () => {
-          if (perm.state === 'denied') {
-            // Stop stream and update status
-            if (streamRef.current) {
-              streamRef.current.getTracks().forEach((t) => t.stop())
-              streamRef.current = null
-            }
-            setStatus('denied')
-          } else if (perm.state === 'granted' && !streamRef.current) {
-            // Permission re-granted — restart camera automatically
-            start()
-          }
-        })
+        permStatus = perm
+        perm.addEventListener('change', handlePermissionChange)
       }).catch(() => {
         // Permissions API not supported for camera — ignore
       })
     }
 
     return () => {
+      // Clean up permission listener to prevent memory leak
+      if (permStatus) {
+        permStatus.removeEventListener('change', handlePermissionChange)
+      }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop())
       }
@@ -199,6 +221,7 @@ export function useCamera() {
         canvasRef.current.width = 0
         canvasRef.current.height = 0
         canvasRef.current = null
+        ctxRef.current = null
       }
     }
   }, [start])
