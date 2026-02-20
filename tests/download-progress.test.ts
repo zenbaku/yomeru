@@ -1,5 +1,5 @@
 /**
- * Tests for download progress clamping.
+ * Tests for download progress clamping and error handling.
  *
  * Verifies that progress values are capped at 100% even when
  * the underlying library reports values exceeding 100 (e.g. when
@@ -7,6 +7,7 @@
  * decompressed bytes).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { DownloadError } from '../src/services/storage/model-cache.ts'
 
 // ---------------------------------------------------------------------------
 // Worker progress clamping
@@ -14,7 +15,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 describe('translation-worker progress clamping', () => {
   let postedMessages: any[]
-  let onMessage: (event: MessageEvent) => void
 
   beforeEach(() => {
     postedMessages = []
@@ -168,14 +168,13 @@ describe('phrase model progress normalization', () => {
 
 describe('display progress calculation', () => {
   /**
-   * Simulate the ModelManager display logic:
-   *   `Downloading ${Math.round(progress * 100)}%`
-   *   width: `${Math.round(progress * 100)}%`
+   * Simulate the updated ModelManager display logic (with clamping):
+   *   `Downloading ${Math.min(Math.round(progress * 100), 100)}%`
    *
    * Where progress is expected to be 0-1 (after normalization).
    */
   function displayPercentage(progress: number): number {
-    return Math.round(progress * 100)
+    return Math.min(Math.round(progress * 100), 100)
   }
 
   it('should display 0-100% for normalized 0-1 progress', () => {
@@ -190,11 +189,126 @@ describe('display progress calculation', () => {
     expect(displayPercentage(clampedProgress)).toBe(100)
   })
 
-  it('should show 354% without clamping (demonstrates the original bug)', () => {
-    // This is what was happening before the fix:
-    // Transformers.js reported progress=354, worker passed it through,
-    // nllb.ts divided by 100 to get 3.54, display multiplied by 100 to get 354%
+  it('should still cap at 100% even if upstream clamping fails', () => {
+    // Defence-in-depth: even if a value > 1 leaks through, display caps it
     const unclamped = 354 / 100 // 3.54
-    expect(displayPercentage(unclamped)).toBe(354)
+    expect(displayPercentage(unclamped)).toBe(100)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PaddleOCR progress clamping
+// ---------------------------------------------------------------------------
+
+describe('PaddleOCR progress clamping', () => {
+  /**
+   * Simulate the paddleocr.ts progress calculation:
+   *   onProgress?.(Math.min((before + loaded) / TOTAL_SIZE, 1))
+   */
+  function paddleOCRProgress(before: number, loaded: number, totalSize: number): number {
+    return Math.min((before + loaded) / totalSize, 1)
+  }
+
+  it('should report progress as fraction of total size', () => {
+    const totalSize = 13_200_000
+    expect(paddleOCRProgress(0, 1_000_000, totalSize)).toBeCloseTo(0.0758, 3)
+    expect(paddleOCRProgress(3_000_000, 5_000_000, totalSize)).toBeCloseTo(0.6061, 3)
+  })
+
+  it('should clamp to 1 when actual file sizes exceed estimates', () => {
+    const totalSize = 13_200_000
+    // If actual rec.onnx is 15MB instead of estimated 10MB
+    expect(paddleOCRProgress(3_000_000, 15_000_000, totalSize)).toBe(1)
+  })
+
+  it('should handle completion of all files', () => {
+    const totalSize = 13_200_000
+    expect(paddleOCRProgress(0, totalSize, totalSize)).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Onboarding progress clamping
+// ---------------------------------------------------------------------------
+
+describe('Onboarding progress clamping', () => {
+  /**
+   * Simulate the Onboarding.tsx pct calculation:
+   *   Math.max(0, Math.min(Math.round(progress * 100), 100))
+   */
+  function onboardingPct(progress: number): number {
+    return Math.max(0, Math.min(Math.round(progress * 100), 100))
+  }
+
+  it('should display 0-100 for valid progress range', () => {
+    expect(onboardingPct(0)).toBe(0)
+    expect(onboardingPct(0.4)).toBe(40)
+    expect(onboardingPct(1)).toBe(100)
+  })
+
+  it('should clamp negative progress to 0', () => {
+    expect(onboardingPct(-0.1)).toBe(0)
+  })
+
+  it('should clamp overflow progress to 100', () => {
+    expect(onboardingPct(1.24)).toBe(100)
+    expect(onboardingPct(3.54)).toBe(100)
+  })
+
+  it('should never exceed 100 for the OCR model phase', () => {
+    // Simulate: 0.4 + p * 0.6 where p might be > 1 without clamping
+    const p = 1.4 // leaked unclamped value
+    const progress = 0.4 + Math.min(p, 1) * 0.6
+    expect(onboardingPct(progress)).toBe(100)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// downloadWithProgress byte-level clamping
+// ---------------------------------------------------------------------------
+
+describe('downloadWithProgress byte-level clamping', () => {
+  /**
+   * Simulate the model-cache.ts onProgress callback:
+   *   onProgress?.(Math.min(loaded, contentLength), contentLength)
+   */
+  function clampedProgress(loaded: number, contentLength: number): number {
+    return Math.min(loaded, contentLength) / contentLength
+  }
+
+  it('should report normal progress', () => {
+    expect(clampedProgress(500, 1000)).toBe(0.5)
+  })
+
+  it('should clamp when loaded exceeds content-length', () => {
+    // This happens with transparent decompression
+    expect(clampedProgress(1200, 1000)).toBe(1)
+  })
+
+  it('should handle exact completion', () => {
+    expect(clampedProgress(1000, 1000)).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// DownloadError classification
+// ---------------------------------------------------------------------------
+
+describe('DownloadError', () => {
+  it('should have a kind property for error classification', () => {
+    const err = new DownloadError('You are offline', 'offline')
+    expect(err.kind).toBe('offline')
+    expect(err.message).toBe('You are offline')
+    expect(err.name).toBe('DownloadError')
+    expect(err).toBeInstanceOf(Error)
+    expect(err).toBeInstanceOf(DownloadError)
+  })
+
+  it('should support all error kinds', () => {
+    const kinds = ['offline', 'network', 'server', 'timeout', 'unknown'] as const
+    for (const kind of kinds) {
+      const err = new DownloadError(`test ${kind}`, kind)
+      expect(err.kind).toBe(kind)
+    }
   })
 })

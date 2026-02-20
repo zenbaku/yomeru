@@ -1,12 +1,24 @@
 import { useState, useEffect } from 'react'
 import { isDictionaryLoaded, loadDictionaryFromJSON } from '../services/storage/indexeddb.ts'
 import { getDefaultOCRModel } from '../services/ocr/registry.ts'
+import { DownloadError } from '../services/storage/model-cache.ts'
 
 interface OnboardingProps {
   onReady: () => void
 }
 
 type Stage = 'checking' | 'needs-download' | 'downloading' | 'ready' | 'error'
+
+/** Classify an error into an actionable user-facing message. */
+function describeError(err: unknown): string {
+  if (err instanceof DownloadError) return err.message
+  if (!navigator.onLine) return 'You appear to be offline. Please check your internet connection and try again.'
+  if (err instanceof Error) {
+    if (err.message.includes('timed out')) return err.message
+    return `Something went wrong: ${err.message}. Please try again.`
+  }
+  return 'An unexpected error occurred. Please try again.'
+}
 
 export function Onboarding({ onReady }: OnboardingProps) {
   const [stage, setStage] = useState<Stage>('checking')
@@ -47,35 +59,45 @@ export function Onboarding({ onReady }: OnboardingProps) {
       }
     } catch (err) {
       setStage('error')
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to check assets')
+      setErrorMsg(describeError(err))
     }
   }
 
   async function startDownload() {
     setStage('downloading')
     setProgress(0)
+
+    // Pre-flight: check network before starting
+    if (!navigator.onLine) {
+      setStage('error')
+      setErrorMsg('You appear to be offline. Please check your internet connection and try again.')
+      return
+    }
+
     try {
       // Step 1: Load dictionary into IndexedDB (0-40%)
       setStatusText('Loading dictionary...')
       await loadDictionaryFromJSON((loaded, total) => {
-        setProgress(loaded / total * 0.4)
+        setProgress(Math.min(loaded / total * 0.4, 0.4))
       })
 
       // Step 2: Download + initialize OCR model (40-100%)
       setStatusText('Downloading OCR model...')
       await getDefaultOCRModel().initialize((p) => {
-        setProgress(0.4 + p * 0.6)
+        // p is already clamped to [0, 1] by paddleocr.ts
+        setProgress(0.4 + Math.min(p, 1) * 0.6)
       })
 
       setStage('ready')
       setStatusText("You're all set! Yomeru now works offline.")
     } catch (err) {
       setStage('error')
-      setErrorMsg(err instanceof Error ? err.message : 'Download failed')
+      setErrorMsg(describeError(err))
     }
   }
 
-  const pct = Math.round(progress * 100)
+  // Clamp percentage to [0, 100] as a final safety net
+  const pct = Math.max(0, Math.min(Math.round(progress * 100), 100))
 
   return (
     <div style={{
@@ -183,7 +205,7 @@ export function Onboarding({ onReady }: OnboardingProps) {
             {statusText}
           </p>
 
-          {/* Progress ring + bar combo */}
+          {/* Progress bar */}
           <div style={{
             position: 'relative',
             width: '100%',
@@ -212,7 +234,11 @@ export function Onboarding({ onReady }: OnboardingProps) {
               color: 'var(--text-secondary)',
               fontSize: 12,
             }}>
-              {pct < 40 ? 'Dictionary' : 'OCR model'}
+              {pct < 40
+                ? 'Step 1/2 \u00B7 Dictionary'
+                : pct < 100
+                  ? 'Step 2/2 \u00B7 OCR model'
+                  : 'Initializing...'}
             </span>
             <span style={{
               color: 'var(--text-primary)',
@@ -279,19 +305,23 @@ export function Onboarding({ onReady }: OnboardingProps) {
       {stage === 'error' && (
         <div style={{ animation: 'slideUp 0.3s ease' }}>
           <div style={{
-            padding: '12px 16px',
+            padding: '14px 18px',
             background: 'rgba(233, 69, 96, 0.1)',
             borderRadius: 10,
             border: '1px solid rgba(233, 69, 96, 0.2)',
             marginBottom: 16,
             maxWidth: 300,
           }}>
-            <p style={{ color: 'var(--accent)', fontSize: 14 }}>
+            <p style={{ color: 'var(--accent)', fontSize: 13, lineHeight: 1.5 }}>
               {errorMsg}
             </p>
           </div>
           <button
-            onClick={checkAssets}
+            onClick={() => {
+              setErrorMsg('')
+              setProgress(0)
+              startDownload()
+            }}
             style={{
               padding: '12px 28px',
               background: 'rgba(255,255,255,0.1)',
