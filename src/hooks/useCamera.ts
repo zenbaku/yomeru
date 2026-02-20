@@ -11,6 +11,22 @@ export function useCamera() {
   const start = useCallback(async () => {
     if (streamRef.current) return
     setStatus('starting')
+
+    // Pre-check permission state to avoid unnecessary prompts.
+    // If the user previously denied, show the denied state immediately
+    // instead of triggering the browser prompt again.
+    if (navigator.permissions) {
+      try {
+        const perm = await navigator.permissions.query({ name: 'camera' as PermissionName })
+        if (perm.state === 'denied') {
+          setStatus('denied')
+          return
+        }
+      } catch {
+        // Permissions API not supported for camera in this browser — proceed normally
+      }
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -21,6 +37,15 @@ export function useCamera() {
         audio: false,
       })
       streamRef.current = stream
+
+      // Listen for tracks ending externally (e.g., OS-level revocation)
+      for (const track of stream.getTracks()) {
+        track.addEventListener('ended', () => {
+          streamRef.current = null
+          setStatus('idle')
+        }, { once: true })
+      }
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
@@ -56,14 +81,44 @@ export function useCamera() {
       canvasRef.current = document.createElement('canvas')
     }
     const canvas = canvasRef.current
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    const ctx = canvas.getContext('2d')!
+    const w = video.videoWidth
+    const h = video.videoHeight
+    if (w === 0 || h === 0) return null
+
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
     ctx.drawImage(video, 0, 0)
-    return ctx.getImageData(0, 0, canvas.width, canvas.height)
+    try {
+      return ctx.getImageData(0, 0, w, h)
+    } catch {
+      return null
+    }
   }, [])
 
+  // Listen for permission changes (e.g., user revokes via browser settings)
   useEffect(() => {
+    if (navigator.permissions) {
+      navigator.permissions.query({ name: 'camera' as PermissionName }).then((perm) => {
+        perm.addEventListener('change', () => {
+          if (perm.state === 'denied') {
+            // Stop stream and update status
+            if (streamRef.current) {
+              streamRef.current.getTracks().forEach((t) => t.stop())
+              streamRef.current = null
+            }
+            setStatus('denied')
+          } else if (perm.state === 'granted' && !streamRef.current) {
+            // Permission re-granted — restart camera automatically
+            start()
+          }
+        })
+      }).catch(() => {
+        // Permissions API not supported for camera — ignore
+      })
+    }
+
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop())
@@ -75,7 +130,7 @@ export function useCamera() {
         canvasRef.current = null
       }
     }
-  }, [])
+  }, [start])
 
   return { videoRef, status, start, stop, captureFrame }
 }

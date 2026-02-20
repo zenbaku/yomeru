@@ -56,15 +56,30 @@ export async function runPipeline(
     // Preprocessing phase — skip for PaddleOCR (its detection model handles scene text natively)
     let processed = frame
     if (ocrModel.id === 'tesseract-jpn') {
-      processed = preprocessFrame(frame)
+      try {
+        processed = preprocessFrame(frame)
+      } catch (err) {
+        console.error('Preprocessing failed:', err)
+        // Fall back to raw frame if preprocessing fails
+      }
     }
 
     // OCR phase
     state = { ...state, phase: 'ocr' }
     onState(state)
 
-    await ocrModel.initialize()
-    const rawResult = await ocrModel.recognize(processed)
+    try {
+      await ocrModel.initialize()
+    } catch (err) {
+      throw new Error(`OCR model failed to load: ${err instanceof Error ? err.message : 'unknown error'}`)
+    }
+
+    let rawResult: OCRResult
+    try {
+      rawResult = await ocrModel.recognize(processed)
+    } catch (err) {
+      throw new Error(`Text recognition failed: ${err instanceof Error ? err.message : 'unknown error'}`)
+    }
 
     // Filter OCR lines (confidence, content, size, overlap, merge)
     const filteredLines = filterOCRLines(rawResult.lines)
@@ -95,8 +110,13 @@ export async function runPipeline(
     // Translate each line independently for per-line dictionary results
     const translations: TranslationResult[][] = []
     for (const line of ocrResult.lines) {
-      const lineTranslations = await translationModel.translate(line.text)
-      translations.push(lineTranslations)
+      try {
+        const lineTranslations = await translationModel.translate(line.text)
+        translations.push(lineTranslations)
+      } catch {
+        // Skip lines that fail to translate rather than aborting
+        translations.push([])
+      }
     }
 
     // Pipeline finishes here — neural translation (NLLB) is handled externally

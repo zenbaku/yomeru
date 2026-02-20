@@ -50,6 +50,9 @@ function serveOnnxWasm(): Plugin {
 }
 
 export default defineConfig({
+  define: {
+    __BUILD_TIMESTAMP__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     serveOnnxWasm(),
     react(),

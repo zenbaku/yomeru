@@ -62,7 +62,11 @@ function App() {
   const prevPhaseRef = useRef(pipeline.phase)
 
   const handleCapture = useCallback((frame: ImageData) => {
-    pipeline.scan(frame, { ocrOnly: pipeline.ocrOnly })
+    try {
+      pipeline.scan(frame, { ocrOnly: pipeline.ocrOnly })
+    } catch (err) {
+      console.error('Scan failed:', err)
+    }
   }, [pipeline.scan, pipeline.ocrOnly])
 
   // When pipeline finishes and neural model is available, trigger neural translation

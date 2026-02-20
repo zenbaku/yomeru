@@ -38,14 +38,22 @@ export function usePipeline() {
     // Clear previous results immediately
     setState({ ...INITIAL_STATE, phase: 'preprocessing', imageSize: { width: frame.width, height: frame.height } })
 
-    await runPipeline(frame, (newState) => {
-      setState(newState)
-    }, options)
-
-    runningRef.current = false
-
-    // Start idle timer after scan completes
-    resetIdleTimer()
+    try {
+      await runPipeline(frame, (newState) => {
+        setState(newState)
+      }, options)
+    } catch (err) {
+      console.error('Pipeline failed unexpectedly:', err)
+      setState((prev) => ({
+        ...prev,
+        phase: 'error',
+        error: err instanceof Error ? err.message : 'Unexpected error during scan',
+      }))
+    } finally {
+      runningRef.current = false
+      // Start idle timer after scan completes
+      resetIdleTimer()
+    }
   }, [])
 
   const reset = useCallback(() => {

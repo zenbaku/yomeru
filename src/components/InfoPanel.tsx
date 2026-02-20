@@ -108,15 +108,26 @@ export function InfoPanel({
         paddingBottom: 'calc(16px + var(--safe-bottom))',
       }}>
         {phase === 'idle' && (
-          <p style={{
-            color: 'var(--text-secondary)',
-            fontSize: 14,
+          <div style={{
             textAlign: 'center',
             padding: '24px 16px',
-            lineHeight: 1.5,
           }}>
-            Point at Japanese text and tap scan
-          </p>
+            <p style={{
+              color: 'var(--text-secondary)',
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}>
+              Point at Japanese text and tap scan
+            </p>
+            <p style={{
+              color: 'var(--text-secondary)',
+              fontSize: 11,
+              opacity: 0.4,
+              marginTop: 16,
+            }}>
+              Build {__BUILD_TIMESTAMP__.replace('T', ' ').slice(0, 19)}
+            </p>
+          </div>
         )}
 
         {phase === 'error' && (
