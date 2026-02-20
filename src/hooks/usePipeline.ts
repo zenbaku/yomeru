@@ -24,18 +24,35 @@ export function usePipeline() {
     idleTimerRef.current = setTimeout(async () => {
       // Only terminate if not currently running a scan
       if (!runningRef.current) {
-        await getDefaultOCRModel().terminate()
+        try {
+          await getDefaultOCRModel().terminate()
+        } catch {
+          // Best-effort — swallow errors from ONNX cleanup
+        }
       }
     }, IDLE_TIMEOUT_MS)
   }
 
   // Release WASM models immediately when the app is backgrounded.
   // On mobile, the OS will kill the tab if it uses too much memory while hidden.
+  //
+  // Also start the idle timer on mount: the OCR model may have been
+  // initialized during onboarding and would otherwise sit in WASM memory
+  // (30-60 MB) indefinitely, since the idle timer was previously only
+  // started after a scan completed.
   useEffect(() => {
+    // Start idle timer immediately — if the OCR model was loaded during
+    // onboarding, this ensures it gets released after IDLE_TIMEOUT_MS
+    // even if the user never scans.
+    resetIdleTimer()
+
     function handleVisibilityChange() {
       if (document.hidden && !runningRef.current) {
         if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-        getDefaultOCRModel().terminate()
+        getDefaultOCRModel().terminate().catch(() => {})
+      } else if (!document.hidden) {
+        // App foregrounded — restart idle timer (model will be lazy-loaded on next scan)
+        resetIdleTimer()
       }
     }
 
@@ -43,6 +60,8 @@ export function usePipeline() {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      // Release OCR model on unmount to prevent leaked WASM memory
+      getDefaultOCRModel().terminate().catch(() => {})
     }
   }, [])
 
