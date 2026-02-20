@@ -12,8 +12,7 @@
     "test": "vitest run --config tests/vitest.config.ts",
     "test:watch": "vitest watch --config tests/vitest.config.ts",
     "test:inspector": "vite dev --config tests/inspector/vite.config.ts",
-    "generate:fixtures": "tsx scripts/generate-synthetic-fixtures.ts",
-    "postinstall": "node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('public/ort-wasm',{recursive:true});['ort-wasm-simd-threaded.wasm','ort-wasm-simd-threaded.mjs'].forEach(f=>cpSync('node_modules/@gutenye/ocr-browser/node_modules/onnxruntime-web/dist/'+f,'public/ort-wasm/'+f))\""
+    "generate:fixtures": "tsx scripts/generate-synthetic-fixtures.ts"
   },
   "dependencies": {
     "@gutenye/ocr-browser": "^1.4.8",
