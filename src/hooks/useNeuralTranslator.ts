@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getNeuralModel, getSelectedNeuralModel } from '../services/translation/neural-registry.ts'
 import type { NeuralModelInfo } from '../services/translation/types.ts'
+import { log } from '../services/logger.ts'
 
 export interface NeuralTranslatorState {
   isModelDownloaded: boolean
@@ -57,6 +58,7 @@ export function useNeuralTranslator(modelId?: string) {
     const prev = modelRef.current
 
     if (model.id !== prev.id) {
+      log.neural('model changed', { from: prev.id, to: model.id })
       if (workerRef.current) {
         workerRef.current.terminate()
         workerRef.current = null
@@ -105,6 +107,7 @@ export function useNeuralTranslator(modelId?: string) {
     clearIdleTimer()
     idleTimerRef.current = setTimeout(() => {
       if (workerRef.current) {
+        log.neural('idle timeout — terminating worker')
         workerRef.current.terminate()
         workerRef.current = null
         setState((s) => ({
@@ -118,13 +121,15 @@ export function useNeuralTranslator(modelId?: string) {
 
   function getOrCreateWorker(): Worker {
     if (!workerRef.current) {
+      log.neural('creating worker', { modelId: modelRef.current.id })
       const worker = new Worker(
         new URL('../workers/translation-worker.ts', import.meta.url),
         { type: 'module' },
       )
 
       // Handle unexpected worker crashes (OOM, WASM abort, etc.)
-      worker.onerror = () => {
+      worker.onerror = (event) => {
+        log.neuralError('worker crashed', event, { modelId: modelRef.current.id })
         workerRef.current = null
         pendingRef.current = null
         onPartialRef.current = null
@@ -151,6 +156,7 @@ export function useNeuralTranslator(modelId?: string) {
             break
 
           case 'ready':
+            log.neural('worker ready', { modelId: modelRef.current.id })
             setState((s) => ({
               ...s,
               isModelLoaded: true,
@@ -176,6 +182,7 @@ export function useNeuralTranslator(modelId?: string) {
             break
 
           case 'error':
+            log.neuralError('worker reported error', payload?.message ?? 'unknown')
             setState((s) => ({
               ...s,
               isModelLoading: false,
@@ -262,6 +269,7 @@ export function useNeuralTranslator(modelId?: string) {
 
   /** Terminate the worker to free memory */
   const terminate = useCallback(() => {
+    log.neural('explicit terminate')
     clearIdleTimer()
     if (workerRef.current) {
       workerRef.current.terminate()
@@ -286,6 +294,7 @@ export function useNeuralTranslator(modelId?: string) {
   useEffect(() => {
     function handleVisibilityChange() {
       if (document.hidden && workerRef.current && !stateRef.current.isTranslating) {
+        log.neural('backgrounded — terminating worker')
         clearIdleTimer()
         workerRef.current.terminate()
         workerRef.current = null

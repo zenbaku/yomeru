@@ -4,6 +4,7 @@ import { getDefaultOCRModel } from './ocr/registry.ts'
 import { getDefaultTranslationModel } from './translation/registry.ts'
 import { filterOCRLines } from './ocr/filters.ts'
 import { preprocessFrame } from './preprocessing.ts'
+import { log } from './logger.ts'
 
 export type PipelinePhase =
   | 'idle'
@@ -61,10 +62,12 @@ export async function runPipeline(
   }
   onState(state)
 
+  const t0 = performance.now()
   try {
     throwIfAborted(signal)
 
     const ocrModel = getDefaultOCRModel()
+    log.pipeline('started', { model: ocrModel.id, width: frame.width, height: frame.height })
 
     // Preprocessing phase — skip for PaddleOCR (its detection model handles scene text natively)
     let processed = frame
@@ -84,7 +87,9 @@ export async function runPipeline(
 
     try {
       await ocrModel.initialize()
+      log.pipeline('ocr model initialized', { elapsed: performance.now() - t0 })
     } catch (err) {
+      log.pipelineError('ocr init failed', err)
       throw new Error(`OCR model failed to load: ${err instanceof Error ? err.message : 'unknown error'}`)
     }
 
@@ -93,7 +98,9 @@ export async function runPipeline(
     let rawResult: OCRResult
     try {
       rawResult = await ocrModel.recognize(processed)
+      log.pipeline('ocr complete', { lines: rawResult.lines.length, elapsed: performance.now() - t0 })
     } catch (err) {
+      log.pipelineError('ocr recognize failed', err)
       throw new Error(`Text recognition failed: ${err instanceof Error ? err.message : 'unknown error'}`)
     }
 
@@ -145,12 +152,17 @@ export async function runPipeline(
     }
 
     // Pipeline finishes here — neural translation (NLLB) is handled externally
+    log.pipeline('done', { elapsed: performance.now() - t0, translatedLines: translations.length })
     state = { ...state, phase: 'done', translations }
     onState(state)
   } catch (err) {
     // Don't report abort as an error — it's an intentional cancellation
-    if (err instanceof DOMException && err.name === 'AbortError') return
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      log.pipeline('aborted', { elapsed: performance.now() - t0 })
+      return
+    }
 
+    log.pipelineError('pipeline failed', err, { elapsed: performance.now() - t0 })
     state = {
       ...state,
       phase: 'error',

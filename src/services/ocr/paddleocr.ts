@@ -1,5 +1,6 @@
 import type { OCRModel, OCRResult } from './types.ts'
 import { downloadWithProgress, isCached } from '../storage/model-cache.ts'
+import { log } from '../logger.ts'
 
 const CACHE_NAME = 'paddleocr-models'
 
@@ -83,6 +84,8 @@ export const paddleOCR: OCRModel = {
     // If a previous init is still pending (possibly hung), abandon it and retry.
     if (initPromise) return initPromise
 
+    log.ocr('initializing PaddleOCR')
+    const t0 = performance.now()
     initPromise = (async () => {
       try {
         // Download all model files with combined progress tracking.
@@ -108,6 +111,7 @@ export const paddleOCR: OCRModel = {
         ])
 
         try {
+          log.ocr('creating ONNX session')
           const { default: Ocr } = await import('@gutenye/ocr-browser')
           ocrInstance = await withTimeout(
             Ocr.create({
@@ -120,7 +124,9 @@ export const paddleOCR: OCRModel = {
             INIT_TIMEOUT_MS,
             'OCR model initialization timed out — the ONNX runtime may have stalled. Try reloading the page.',
           )
+          log.ocr('ONNX session created', { elapsed: performance.now() - t0 })
         } catch (err) {
+          log.ocrError('ONNX session creation failed', err)
           // Ensure ocrInstance is null on timeout or any init failure so
           // subsequent initialize() calls retry instead of assuming success
           ocrInstance = null
@@ -142,6 +148,8 @@ export const paddleOCR: OCRModel = {
     if (!ocrInstance) {
       throw new Error('PaddleOCR not initialized. Call initialize() first.')
     }
+    const t0 = performance.now()
+    log.ocr('recognize started', { width: image.width, height: image.height })
 
     // Reuse a single offscreen canvas to avoid leaking GPU-backed surfaces
     if (!recognizeCanvas) {
@@ -194,6 +202,7 @@ export const paddleOCR: OCRModel = {
         })
 
       const fullText = lines.map((l: any) => l.text).join('')
+      log.ocr('recognize complete', { elapsed: performance.now() - t0, lines: lines.length, chars: fullText.length })
       return { lines, fullText }
     } finally {
       URL.revokeObjectURL(blobUrl)
@@ -206,6 +215,7 @@ export const paddleOCR: OCRModel = {
   },
 
   async terminate() {
+    log.ocr('terminate called', { hasInstance: !!ocrInstance })
     if (ocrInstance) {
       // The @gutenye/ocr-browser library doesn't expose a public dispose()
       // method.  Try known cleanup methods on the instance and its internal

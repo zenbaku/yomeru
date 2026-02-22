@@ -8,6 +8,7 @@ import { ModelManager } from './components/ModelManager.tsx'
 import { usePipeline } from './hooks/usePipeline.ts'
 import { useNeuralTranslator } from './hooks/useNeuralTranslator.ts'
 import { getSelectedNeuralModelId } from './services/translation/neural-registry.ts'
+import { log } from './services/logger.ts'
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -20,7 +21,7 @@ class ErrorBoundary extends Component<
   }
 
   componentDidCatch(err: Error, info: ErrorInfo) {
-    console.error('ErrorBoundary caught:', err, info.componentStack)
+    log.app('ErrorBoundary caught crash', { error: err.message, stack: info.componentStack })
   }
 
   render() {
@@ -53,6 +54,9 @@ class ErrorBoundary extends Component<
 type Screen = 'camera' | 'models'
 
 function App() {
+  // Log device info once at startup
+  useEffect(() => { log.deviceInfo() }, [])
+
   const [ready, setReady] = useState(false)
   const [screen, setScreen] = useState<Screen>('camera')
   const pipeline = usePipeline()

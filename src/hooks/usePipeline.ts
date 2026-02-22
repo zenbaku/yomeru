@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { runPipeline, INITIAL_STATE, type PipelineState, type PipelineOptions } from '../services/pipeline.ts'
 import { getDefaultOCRModel } from '../services/ocr/registry.ts'
+import { log } from '../services/logger.ts'
 
 /**
  * Release WASM models after this many ms of inactivity to free memory.
@@ -24,10 +25,12 @@ export function usePipeline() {
     idleTimerRef.current = setTimeout(async () => {
       // Only terminate if not currently running a scan
       if (!runningRef.current) {
+        log.ocr('idle timeout — terminating OCR model')
         try {
           await getDefaultOCRModel().terminate()
-        } catch {
-          // Best-effort — swallow errors from ONNX cleanup
+          log.ocr('idle terminate complete')
+        } catch (err) {
+          log.ocrError('idle terminate failed', err)
         }
       }
     }, IDLE_TIMEOUT_MS)
@@ -48,10 +51,13 @@ export function usePipeline() {
 
     function handleVisibilityChange() {
       if (document.hidden && !runningRef.current) {
+        log.ocr('backgrounded — terminating OCR model')
         if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-        getDefaultOCRModel().terminate().catch(() => {})
+        getDefaultOCRModel().terminate().catch((err) => {
+          log.ocrError('background terminate failed', err)
+        })
       } else if (!document.hidden) {
-        // App foregrounded — restart idle timer (model will be lazy-loaded on next scan)
+        log.ocr('foregrounded — restarting idle timer')
         resetIdleTimer()
       }
     }
@@ -68,6 +74,8 @@ export function usePipeline() {
   const scan = useCallback(async (frame: ImageData, options?: PipelineOptions) => {
     if (runningRef.current) return
     runningRef.current = true
+    const scanStart = performance.now()
+    log.pipeline('scan started', { width: frame.width, height: frame.height })
 
     // Cancel pending idle cleanup — we're actively using the models
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
@@ -90,13 +98,15 @@ export function usePipeline() {
         throw new Error('Scan timed out. Try reloading the page and scanning again.')
       }
     } catch (err) {
-      console.error('Pipeline failed unexpectedly:', err)
+      log.pipelineError('scan failed', err)
       setState((prev) => ({
         ...prev,
         phase: 'error',
         error: err instanceof Error ? err.message : 'Unexpected error during scan',
       }))
     } finally {
+      const elapsed = performance.now() - scanStart
+      log.pipeline('scan finished', { elapsed })
       clearTimeout(timer)
       abortRef.current = null
       runningRef.current = false

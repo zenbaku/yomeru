@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
+import { log } from '../services/logger.ts'
 
 export type CameraStatus = 'idle' | 'starting' | 'active' | 'denied' | 'error'
 
@@ -50,6 +51,7 @@ export function useCamera() {
 
   const start = useCallback(async () => {
     if (streamRef.current) return
+    log.camera('starting')
     setStatus('starting')
 
     // Pre-check permission state to avoid unnecessary prompts.
@@ -86,9 +88,17 @@ export function useCamera() {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
       }
+      const track = stream.getVideoTracks()[0]
+      const settings = track?.getSettings()
+      log.camera('active', {
+        width: settings?.width,
+        height: settings?.height,
+        frameRate: settings?.frameRate,
+      })
       setStatus('active')
     } catch (err) {
       const name = (err as DOMException).name
+      log.cameraError('start failed', err, { domExceptionName: name })
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
         setStatus('denied')
       } else {
@@ -98,6 +108,7 @@ export function useCamera() {
   }, [])
 
   const stop = useCallback(() => {
+    log.camera('stopping')
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop())
       streamRef.current = null
@@ -154,6 +165,7 @@ export function useCamera() {
       if (document.hidden) {
         // App backgrounded — release the camera stream to free memory
         if (streamRef.current) {
+          log.camera('backgrounded — releasing stream')
           wasActiveRef.current = true
           streamRef.current.getTracks().forEach((t) => t.stop())
           streamRef.current = null
@@ -170,6 +182,7 @@ export function useCamera() {
       } else {
         // App foregrounded — restart camera if it was active before
         if (wasActiveRef.current) {
+          log.camera('foregrounded — restarting')
           wasActiveRef.current = false
           start()
         }
